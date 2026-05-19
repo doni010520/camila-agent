@@ -43,9 +43,8 @@ export function createConsultarDisponibilidade(deps: {
 					await supabase.upsertServico({
 						id: s.id,
 						nome: s.nome,
-						duracao_em_minutos: s.duracaoEmMinutos,
+						duracao_minutos: s.duracaoEmMinutos,
 						preco: s.preco ?? null,
-						ativo: s.ativo,
 					});
 				}
 				const retry = await supabase.findServicoByName(input.servico);
@@ -57,10 +56,10 @@ export function createConsultarDisponibilidade(deps: {
 			return await searchSlots(servico, input);
 
 			async function searchSlots(
-				svc: { id: number; nome: string; duracao_em_minutos: number; preco?: number | null },
+				svc: { id: number; nome: string; duracao_minutos: number; preco?: number | null },
 				inp: Input,
 			): Promise<ToolResult> {
-				const duracao = inp.duracao_minutos ?? svc.duracao_em_minutos;
+				const duracao = inp.duracao_minutos ?? svc.duracao_minutos;
 				const turno = inp.hora_e_turno ?? 'qualquer';
 				const startDate = inp.data
 					? new Date(`${inp.data}T12:00:00-03:00`)
@@ -127,7 +126,7 @@ export function createConsultarDisponibilidade(deps: {
 					servico: {
 						id: svc.id,
 						nome: svc.nome,
-						duracao: svc.duracao_em_minutos,
+						duracao: svc.duracao_minutos,
 						preco: svc.preco ?? 0,
 					},
 					opcoes,

@@ -48,7 +48,7 @@ function makeTool(overrides?: {
 		findServicoByName: vi.fn().mockResolvedValue({
 			id: 7331915,
 			nome: 'Volume Brasileiro',
-			duracao_em_minutos: 120,
+			duracao_minutos: 120,
 			preco: 160,
 		}),
 		upsertServico: vi.fn(),

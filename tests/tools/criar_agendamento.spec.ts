@@ -10,7 +10,7 @@ const ctx: ToolContext = {
 	lead: { nome: 'Maria', etiquetas: [], sinal_pago: false },
 };
 
-const SERVICO = { id: 7331915, nome: 'Volume Brasileiro', duracao_em_minutos: 120, preco: 160 };
+const SERVICO = { id: 7331915, nome: 'Volume Brasileiro', duracao_minutos: 120, preco: 160 };
 
 function makeDeps(overrides?: {
 	getAgendamentoFn?: ReturnType<typeof vi.fn>;

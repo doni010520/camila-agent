@@ -63,7 +63,7 @@ export function createCriarAgendamento(deps: {
 					servicoId: servico.id,
 					profissionalId,
 					dataHoraInicio: input.data_e_hora,
-					duracaoEmMinutos: servico.duracao_em_minutos,
+					duracaoEmMinutos: servico.duracao_minutos,
 					valor: servico.preco ?? undefined,
 					observacoes: '',
 					confirmado: false,

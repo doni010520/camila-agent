@@ -66,9 +66,11 @@ export const leadCamilaRowSchema = z.object({
 export const servicoRowSchema = z.object({
 	id: z.number(),
 	nome: z.string(),
-	duracao_em_minutos: z.number(),
-	preco: z.number().nullable().optional(),
-	ativo: z.boolean().optional(),
+	duracao_minutos: z.number(),  // real column name in Supabase (NOT duracao_em_minutos)
+	preco: z.coerce.number().nullable().optional(),  // stored as numeric, may come as string
+	categoria: z.string().nullable().optional(),
+	descricao: z.string().nullable().optional(),
+	visivel_cliente: z.boolean().nullable().optional(),
 });
 
 export type AgendamentoRow = z.infer<typeof agendamentoRowSchema>;
