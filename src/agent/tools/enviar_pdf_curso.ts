@@ -11,7 +11,7 @@ const COURSE_FILES = [
 		name: 'Tabela de Valores - Curso.pdf',
 		type: 'document' as const,
 	},
-	{ path: 'nova-modalidade.png', name: 'Nova Modalidade.png', type: 'image' as const },
+	{ path: 'nova-modalidade.jpeg', name: 'Nova Modalidade.jpeg', type: 'image' as const },
 	{ path: 'workshop-fox.pdf', name: 'Workshop FOX.pdf', type: 'document' as const },
 	{ path: 'workshop-hidragloss.pdf', name: 'Workshop Hidragloss.pdf', type: 'document' as const },
 ];
@@ -55,12 +55,12 @@ export function createEnviarPdfCurso(deps: {
 			let enviados = 0;
 			for (const file of COURSE_FILES) {
 				try {
-					const bytes = await supabase.downloadFile(file.path);
-					const base64 = Buffer.from(bytes).toString('base64');
+					// Use public URL (avoids base64 size limit + faster)
+					const publicUrl = await supabase.getPublicUrl(file.path);
 					await uazapi.sendMedia({
 						number: input.telefone,
 						type: file.type,
-						fileBase64: base64,
+						fileBase64: publicUrl,
 						docName: file.type === 'document' ? file.name : undefined,
 					});
 					enviados++;

@@ -16,7 +16,7 @@ const ctx: ToolContext = {
 describe('enviar_catalogo', () => {
 	it('sends PDF and marks as sent', async () => {
 		const uazapi = { sendMedia: vi.fn().mockResolvedValue(undefined) };
-		const supabase = { downloadFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])) };
+		const supabase = { getPublicUrl: vi.fn().mockResolvedValue('https://cdn.test/servicos.pdf') };
 		const leadManager = {
 			getLead: vi.fn().mockResolvedValue(null),
 			wasCatalogoSentRecently: vi.fn().mockReturnValue(false),

@@ -12,9 +12,9 @@ const ctx: ToolContext = {
 function makeDeps(overrides?: { pdfEnviadoEm?: string | null; downloadFails?: boolean }) {
 	const uazapi = { sendMedia: vi.fn().mockResolvedValue(undefined) };
 	const supabase = {
-		downloadFile: overrides?.downloadFails
+		getPublicUrl: overrides?.downloadFails
 			? vi.fn().mockRejectedValue(new Error('not found'))
-			: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+			: vi.fn().mockImplementation((p: string) => Promise.resolve(`https://cdn.test/${p}`)),
 	};
 	const leadManager = {
 		getLead: vi
@@ -73,10 +73,10 @@ describe('enviar_pdf_curso', () => {
 		const uazapi = { sendMedia: vi.fn().mockResolvedValue(undefined) };
 		let callCount = 0;
 		const supabase = {
-			downloadFile: vi.fn().mockImplementation(async () => {
+			getPublicUrl: vi.fn().mockImplementation(async (p: string) => {
 				callCount++;
 				if (callCount === 2) throw new Error('download failed');
-				return new Uint8Array([1, 2, 3]);
+				return `https://cdn.test/${p}`;
 			}),
 		};
 		const leadManager = { getLead: vi.fn().mockResolvedValue(null), markPdfCursoEnviado: vi.fn() };

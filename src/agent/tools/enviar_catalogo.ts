@@ -29,14 +29,13 @@ export function createEnviarCatalogo(deps: {
 				return { status: 'ok', ja_enviado: true, mensagem: 'Catálogo já enviado nesta conversa.' };
 			}
 
-			// Download from Supabase Storage and send as base64
+			// UAZAPI accepts public URL in `file` field (lighter than base64, no size limits)
 			try {
-				const bytes = await supabase.downloadFile('servicos.pdf');
-				const base64 = Buffer.from(bytes).toString('base64');
+				const publicUrl = await supabase.getPublicUrl('servicos.pdf');
 				await uazapi.sendMedia({
 					number: input.telefone,
 					type: 'document',
-					fileBase64: base64,
+					fileBase64: publicUrl, // field name is `file` in UAZAPI; accepts URL or base64
 					docName: 'Catálogo Camila Rosario Academy.pdf',
 				});
 			} catch (err) {
