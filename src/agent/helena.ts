@@ -112,7 +112,7 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 				continue;
 			}
 
-			let args: unknown;
+			let args: Record<string, unknown>;
 			try {
 				args = JSON.parse(tc.function.arguments);
 			} catch {
@@ -122,6 +122,13 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 					content: JSON.stringify({ status: 'erro', razao: 'JSON inválido nos argumentos' }),
 				});
 				continue;
+			}
+
+			// Inject contextual fields automatically so the model never has to ask the client
+			// for what we already have (telefone from chatid, nome from lead).
+			args.telefone = ctx.telefone;
+			if (ctx.lead.nome && !args.nome) {
+				args.nome = ctx.lead.nome;
 			}
 
 			const parsed = tool.inputSchema.safeParse(args);
