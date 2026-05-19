@@ -60,21 +60,41 @@ export class PostgresClient {
 		await this.pool.end();
 	}
 
-	// ── Chat memory (reusing n8n_chat_histories table) ──
+	// ── Chat memory (reuses n8n_chat_histories, Langchain format) ──
+	// Schema real (criado pelo n8n): id SERIAL, session_id VARCHAR, message JSONB
+	// message format: { type: 'human'|'ai'|'tool'|'system', content: string, additional_kwargs, response_metadata }
 
 	async ensureChatMemoryTable(): Promise<void> {
+		// Cria com schema compatível com n8n (Langchain). IF NOT EXISTS = no-op se já existir.
 		await this.pool.query(`
 			CREATE TABLE IF NOT EXISTS n8n_chat_histories (
 				id SERIAL PRIMARY KEY,
-				session_id TEXT NOT NULL,
-				role TEXT NOT NULL,
-				content TEXT NOT NULL,
-				metadata JSONB,
-				created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+				session_id VARCHAR(255) NOT NULL,
+				message JSONB NOT NULL
 			);
 			CREATE INDEX IF NOT EXISTS idx_chat_histories_session
-				ON n8n_chat_histories(session_id, created_at DESC);
+				ON n8n_chat_histories(session_id, id DESC);
 		`);
+	}
+
+	private roleToLangchainType(role: string): string {
+		switch (role) {
+			case 'user': return 'human';
+			case 'assistant': return 'ai';
+			case 'tool': return 'tool';
+			case 'system': return 'system';
+			default: return role;
+		}
+	}
+
+	private langchainTypeToRole(type: string): 'user' | 'assistant' | 'tool' | 'system' {
+		switch (type) {
+			case 'human': return 'user';
+			case 'ai': return 'assistant';
+			case 'tool': return 'tool';
+			case 'system': return 'system';
+			default: return 'user';
+		}
 	}
 
 	async saveChatMessage(
@@ -83,22 +103,34 @@ export class PostgresClient {
 		content: string,
 		metadata?: Record<string, unknown>,
 	): Promise<void> {
+		const message = {
+			type: this.roleToLangchainType(role),
+			content,
+			additional_kwargs: metadata ?? {},
+			response_metadata: {},
+		};
 		await this.pool.query(
-			'INSERT INTO n8n_chat_histories (session_id, role, content, metadata) VALUES ($1, $2, $3, $4)',
-			[sessionId, role, content, metadata ? JSON.stringify(metadata) : null],
+			'INSERT INTO n8n_chat_histories (session_id, message) VALUES ($1, $2)',
+			[sessionId, JSON.stringify(message)],
 		);
 	}
 
 	async loadRecentMessages(sessionId: string, limit = 30): Promise<ChatMemoryRow[]> {
-		const rows = await this.query<Record<string, unknown>>(
-			`SELECT session_id, role, content, metadata, created_at
+		const rows = await this.query<{ id: number; session_id: string; message: Record<string, unknown> }>(
+			`SELECT id, session_id, message
 			 FROM n8n_chat_histories
 			 WHERE session_id = $1
-			 ORDER BY created_at DESC
+			 ORDER BY id DESC
 			 LIMIT $2`,
 			[sessionId, limit],
 		);
-		return rows.map((r) => chatMemoryRowSchema.parse(r)).reverse();
+		return rows.reverse().map((r) => ({
+			id: r.id,
+			session_id: r.session_id,
+			role: this.langchainTypeToRole(String(r.message.type ?? 'human')),
+			content: String(r.message.content ?? ''),
+			metadata: (r.message.additional_kwargs as Record<string, unknown>) ?? null,
+		}));
 	}
 
 	// ── Client lookup by last 8 digits ──
