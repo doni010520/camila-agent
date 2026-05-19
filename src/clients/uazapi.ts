@@ -1,0 +1,233 @@
+import { z } from 'zod';
+import { getEnv } from '../infra/env.js';
+import { UazapiError } from '../infra/errors.js';
+import type { Logger } from '../infra/logger.js';
+import { rootLogger } from '../infra/logger.js';
+import { isRetryableStatus, withRetry } from '../infra/retry.js';
+
+// ═══════════════════════════════════════════════════════════════
+// Schemas — from REFERENCE-PAYLOADS.md real production webhooks
+// ═══════════════════════════════════════════════════════════════
+
+export const uazapiMessageTypeSchema = z.enum([
+	'conversation',
+	'extendedTextMessage',
+	'ephemeralMessage',
+	'audioMessage',
+	'imageMessage',
+	'documentMessage',
+	'locationMessage',
+	'stickerMessage',
+	'contactMessage',
+]);
+
+export const uazapiMessageContentSchema = z.object({
+	URL: z.string().optional(),
+	mediaKey: z.string().optional(),
+	degreesLatitude: z.number().nullable().optional(),
+	degreesLongitude: z.number().nullable().optional(),
+});
+
+// Real field is `chatid`, NOT `sender_pn`
+export const uazapiMessageSchema = z.object({
+	chatid: z.string(),
+	text: z.string().optional().default(''),
+	messageType: uazapiMessageTypeSchema,
+	wasSentByApi: z.boolean().optional().default(false),
+	fromMe: z.boolean().optional().default(false),
+	content: uazapiMessageContentSchema.optional(),
+	buttonOrListid: z.string().optional().default(''),
+});
+
+// Full webhook: chat info + message + token
+export const uazapiWebhookSchema = z.object({
+	body: z.object({
+		chat: z
+			.object({
+				wa_name: z.string().optional(),
+				wa_label: z.string().optional(),
+			})
+			.optional(),
+		message: uazapiMessageSchema,
+		token: z.string().optional(),
+		created_at: z.string().optional(),
+	}),
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+
+/** Extract phone digits from chatid: "5571999999999@s.whatsapp.net" → "5571999999999" */
+export function chatidToTelefone(chatid: string): string {
+	return chatid.split('@')[0] ?? '';
+}
+
+/** Check if a webhook message is a button click (buttonOrListid populated) */
+export function isButtonClick(msg: z.infer<typeof uazapiMessageSchema>): boolean {
+	return msg.buttonOrListid !== undefined && msg.buttonOrListid !== '';
+}
+
+/**
+ * Parse button click convention from production:
+ * "Id_sim495316019" → { action: 'confirmar', agendamentoId: '495316019' }
+ * "Id_nao495316019" → { action: 'recusar', agendamentoId: '495316019' }
+ * "id_sim495316019" → { action: 'enquete_sim', agendamentoId: '495316019' }
+ * "id_nao" → { action: 'enquete_nao', agendamentoId: '' }
+ */
+export function parseButtonId(buttonOrListid: string): { action: string; agendamentoId: string } {
+	const idStr = buttonOrListid.replace(/[^a-zA-Z_]/g, '');
+	const numStr = buttonOrListid.replace(/\D/g, '');
+
+	if (idStr === 'Id_sim') return { action: 'confirmar', agendamentoId: numStr };
+	if (idStr === 'Id_nao') return { action: 'recusar', agendamentoId: numStr };
+	if (idStr === 'id_sim') return { action: 'enquete_sim', agendamentoId: numStr };
+	if (idStr === 'id_nao') return { action: 'enquete_nao', agendamentoId: numStr };
+	return { action: 'unknown', agendamentoId: numStr };
+}
+
+/**
+ * Normalize number for UAZAPI outbound:
+ * Groups (ending in @g.us) are preserved as-is.
+ * Person numbers strip @s.whatsapp.net.
+ */
+export function normalizeNumber(input: string): string {
+	if (input.endsWith('@g.us')) return input;
+	return input.split('@')[0] ?? input;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════════════════
+
+export type UazapiMessage = z.infer<typeof uazapiMessageSchema>;
+export type UazapiWebhookPayload = z.infer<typeof uazapiWebhookSchema>;
+
+// ═══════════════════════════════════════════════════════════════
+// Client
+// ═══════════════════════════════════════════════════════════════
+
+export interface UazapiClientConfig {
+	baseUrl?: string;
+	token?: string;
+	dryRun?: boolean;
+	logger?: Logger;
+}
+
+export class UazapiClient {
+	private readonly baseUrl: string;
+	private readonly token: string;
+	private readonly dryRun: boolean;
+	private readonly log: Logger;
+
+	constructor(config?: UazapiClientConfig) {
+		const env = getEnv();
+		this.baseUrl = (config?.baseUrl ?? env.UAZAPI_BASE_URL).replace(/\/$/, '');
+		this.token = config?.token ?? env.UAZAPI_TOKEN;
+		this.dryRun = config?.dryRun ?? env.UAZAPI_DRY_RUN;
+		this.log = config?.logger ?? rootLogger.child({ client: 'uazapi' });
+	}
+
+	private async post(path: string, body: unknown): Promise<unknown> {
+		if (this.dryRun) {
+			this.log.info({ path, dry_run: true }, 'UAZAPI dry-run: skipping send');
+			return { ok: true, dry_run: true };
+		}
+
+		const url = `${this.baseUrl}${path}`;
+		const doRequest = async () => {
+			this.log.debug({ path }, 'UAZAPI request');
+			const res = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'application/json',
+					token: this.token,
+				},
+				body: JSON.stringify(body),
+			});
+			if (!res.ok) {
+				const text = await res.text().catch(() => '');
+				throw new UazapiError(
+					`POST ${path} returned ${res.status}`,
+					res.status >= 500 ? 502 : res.status,
+					{ status: res.status, body: text },
+				);
+			}
+			return await res.json().catch(() => ({}));
+		};
+
+		return withRetry(doRequest, {
+			maxRetries: 2,
+			baseDelayMs: 300,
+			shouldRetry: (err) => err instanceof UazapiError && isRetryableStatus(err.statusCode),
+			logger: this.log,
+			label: `uazapi:POST ${path}`,
+		});
+	}
+
+	// ── Send text: fields `number`, `text`, `delay` (ms) ──
+	async sendText(number: string, text: string, delayMs = 3000): Promise<void> {
+		await this.post('/send/text', {
+			number: normalizeNumber(number),
+			text,
+			delay: delayMs,
+		});
+		this.log.info({ number: number.slice(-8) }, 'Text sent');
+	}
+
+	// ── Send media: `file` is BASE64, not URL ──
+	async sendMedia(opts: {
+		number: string;
+		type: 'document' | 'image' | 'audio' | 'sticker' | 'video';
+		fileBase64: string;
+		docName?: string;
+	}): Promise<void> {
+		await this.post('/send/media', {
+			number: normalizeNumber(opts.number),
+			type: opts.type,
+			file: opts.fileBase64,
+			...(opts.docName ? { docName: opts.docName } : {}),
+		});
+		this.log.info({ number: opts.number.slice(-8), type: opts.type }, 'Media sent');
+	}
+
+	// ── Send menu: `choices` is ["Label|id"] strings, not objects ──
+	async sendMenu(opts: {
+		number: string;
+		text: string;
+		choices: Array<{ label: string; id: string }>;
+	}): Promise<void> {
+		if (opts.choices.length > 3) throw new UazapiError('Máx 3 botões', 400);
+		await this.post('/send/menu', {
+			number: normalizeNumber(opts.number),
+			type: 'button',
+			text: opts.text,
+			choices: opts.choices.map((c) => `${c.label}|${c.id}`),
+		});
+		this.log.info({ number: opts.number.slice(-8), choiceCount: opts.choices.length }, 'Menu sent');
+	}
+
+	// ── Send PIX button: only pixType, pixKey, pixName (no valor/banco/titular) ──
+	async sendPixButton(opts: {
+		number: string;
+		pixType?: 'EVP' | 'CPF' | 'CNPJ' | 'EMAIL' | 'PHONE';
+		pixKey: string;
+		pixName: string;
+	}): Promise<void> {
+		await this.post('/send/pix-button', {
+			number: normalizeNumber(opts.number),
+			pixType: opts.pixType ?? 'EVP',
+			pixKey: opts.pixKey,
+			pixName: opts.pixName,
+		});
+		this.log.info({ number: opts.number.slice(-8) }, 'PIX button sent');
+	}
+
+	// ── Fetch media binary (from UAZAPI CDN URL in content.URL) ──
+	async fetchMedia(mediaUrl: string): Promise<Uint8Array> {
+		const res = await fetch(mediaUrl);
+		if (!res.ok) throw new UazapiError(`Failed to download media: ${res.status}`, 502);
+		return new Uint8Array(await res.arrayBuffer());
+	}
+}

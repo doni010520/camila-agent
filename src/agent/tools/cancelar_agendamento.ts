@@ -1,0 +1,129 @@
+import { z } from 'zod';
+import type { PostgresClient } from '../../clients/postgres.js';
+import type { AppSupabaseClient } from '../../clients/supabase.js';
+import type { TrinksClient } from '../../clients/trinks.js';
+import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
+
+const ACTIVE_STATUSES = new Set([1, 2, 3, 4]);
+
+const inputSchema = z.object({
+	telefone: z.string().describe('Telefone da cliente'),
+	agendamento_id: z
+		.number()
+		.optional()
+		.describe('ID do agendamento. Se omitido, lista todos ativos.'),
+	motivo: z.string().optional().default('Cancelado a pedido do cliente'),
+});
+
+type Input = z.infer<typeof inputSchema>;
+
+export function createCancelarAgendamento(deps: {
+	trinks: TrinksClient;
+	supabase: AppSupabaseClient;
+	postgres: PostgresClient;
+}): ToolDefinition<Input> {
+	const { trinks, supabase, postgres } = deps;
+
+	return {
+		name: 'cancelar_agendamento',
+		description:
+			'Cancela um agendamento. Se agendamento_id não informado, lista os ativos para a cliente escolher.',
+		inputSchema,
+		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
+			// 1. Find cliente
+			const lookup = await findClienteByTelefone(input.telefone, { trinks, postgres });
+			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
+
+			// 2. If no agendamento_id, list active ones
+			if (input.agendamento_id === undefined) {
+				const result = await trinks.listAgendamentos({ clienteId: lookup.cliente.id });
+				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
+
+				if (ativos.length === 0) {
+					return { status: 'ok', total: 0, mensagem: 'Nenhum agendamento ativo encontrado.' };
+				}
+
+				if (ativos.length === 1 && ativos[0]) {
+					// Auto-cancel single active
+					return await cancelAndVerify(ativos[0].id, input.motivo);
+				}
+
+				// Multiple — return list for choice
+				return {
+					status: 'aguardando_escolha',
+					total: ativos.length,
+					agendamentos: ativos.map((a) => ({
+						id: a.id,
+						servico: a.servico.nome,
+						data_hora: a.dataHoraInicio,
+						profissional: a.profissional.nome,
+						status: a.status.nome,
+					})),
+				};
+			}
+
+			// 3. Cancel specific agendamento
+			return await cancelAndVerify(input.agendamento_id, input.motivo);
+
+			async function cancelAndVerify(agId: number, motivo: string): Promise<ToolResult> {
+				// PATCH cancel
+				try {
+					await trinks.cancelarAgendamento(agId, { motivo });
+				} catch (err) {
+					return {
+						status: 'erro',
+						razao: `Falha ao cancelar: ${err instanceof Error ? err.message : 'unknown'}`,
+					};
+				}
+
+				// VERIFY: GET and check status === 7 (Cancelado)
+				try {
+					const readBack = await trinks.getAgendamento(agId);
+					if (readBack.status.id !== 7) {
+						return {
+							status: 'erro',
+							razao: `Cancelamento não confirmado. Status atual: ${readBack.status.nome} (${readBack.status.id})`,
+						};
+					}
+
+					// Mirror to Supabase (best-effort)
+					try {
+						await supabase.upsertAgendamento({ id: agId, status_id: 7 });
+					} catch {
+						/* best-effort */
+					}
+
+					// Log (best-effort)
+					try {
+						await supabase.raw.from('logs_agendamentos').insert({
+							agendamento_id: agId,
+							acao: 'cancelamento',
+							motivo,
+							created_at: new Date().toISOString(),
+						});
+					} catch {
+						/* best-effort */
+					}
+
+					return {
+						status: 'ok',
+						agendamento_id: agId,
+						servico: readBack.servico.nome,
+						data_hora: readBack.dataHoraInicio,
+						mensagem: `Agendamento de ${readBack.servico.nome} cancelado com sucesso.`,
+					};
+				} catch (err) {
+					return {
+						status: 'erro',
+						razao: 'Cancelamento não confirmado por leitura subsequente',
+						detalhes: {
+							agendamentoId: agId,
+							error: err instanceof Error ? err.message : 'unknown',
+						},
+					};
+				}
+			}
+		},
+	};
+}
