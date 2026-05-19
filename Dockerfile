@@ -1,7 +1,7 @@
 # ── Build stage ──
 FROM node:22-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN pnpm build
 # ── Runtime stage ──
 FROM node:22-alpine AS runtime
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
