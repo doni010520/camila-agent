@@ -15,10 +15,16 @@ export class ChatMemory {
 	}
 
 	async loadRecent(sessionId: string): Promise<ChatMemoryRow[]> {
-		const messages = await this.pg.loadRecentMessages(sessionId, MAX_MESSAGES);
+		const raw = await this.pg.loadRecentMessages(sessionId, MAX_MESSAGES);
+		// Filter out role 'tool' messages — they are intermediate context that
+		// only makes sense paired with the originating `assistant.tool_calls`.
+		// Persisting them in the langchain-format table loses the linkage,
+		// so loading them back into OpenAI as orphan `tool` messages breaks
+		// the API contract. We keep only user + assistant exchanges.
+		const messages = raw.filter((m) => m.role === 'user' || m.role === 'assistant');
 		this.log.debug(
-			{ sessionId: sessionId.slice(-8), count: messages.length },
-			'Loaded chat memory',
+			{ sessionId: sessionId.slice(-8), raw: raw.length, kept: messages.length },
+			'Loaded chat memory (filtered)',
 		);
 		return messages;
 	}

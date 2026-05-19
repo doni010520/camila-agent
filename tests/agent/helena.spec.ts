@@ -142,10 +142,10 @@ describe('runAgent (helena.ts)', () => {
 			expect.objectContaining({ telefone: '5571999' }),
 		);
 		expect(deps.sentTexts).toEqual(['Resultado: test']);
-		// Memory should include tool result
+		// Tool messages are intentionally NOT persisted to long-term memory
+		// (they would corrupt OpenAI history — see helena.ts comment).
 		const toolSaves = deps.savedMessages.filter((m) => m.role === 'tool');
-		expect(toolSaves).toHaveLength(1);
-		expect(toolSaves[0]?.content).toContain('test_tool');
+		expect(toolSaves).toHaveLength(0);
 	});
 
 	it('handles unknown tool name → error message in history', async () => {

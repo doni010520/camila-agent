@@ -153,11 +153,11 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 			const resultStr = JSON.stringify(toolResult);
 			messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
 
-			// Save tool interaction to memory
-			await deps.memory.save(ctx.telefone, 'tool', `[${tc.function.name}] ${resultStr}`, {
-				toolName: tc.function.name,
-				args: parsed.data,
-			});
+			// NOTE: tool messages are NOT saved to long-term memory.
+			// They are intermediate context for the agent loop only.
+			// Saving them would corrupt the history (OpenAI requires `tool` to follow
+			// an `assistant` with `tool_calls`, which we can't reconstruct from langchain format).
+			// Only user input + final assistant response are persisted (see block above).
 		}
 	}
 
