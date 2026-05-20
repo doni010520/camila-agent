@@ -55,7 +55,39 @@ export function createCriarAgendamento(deps: {
 				clienteNovo = true;
 			}
 
-			// 3. POST create agendamento
+			// 3a. IDEMPOTENCY: check if cliente already has an active agendamento at this time
+			// Prevents duplicate creation when agent retries (e.g. after timezone mismatch in verify).
+			const dataDia = input.data_e_hora.substring(0, 10); // 'YYYY-MM-DD'
+			try {
+				const existing = await trinks.listAgendamentos({
+					clienteId,
+					dataInicio: `${dataDia}T00:00:00`,
+					dataFim: `${dataDia}T23:59:59`,
+				});
+				const dup = existing.data?.find((a) => {
+					const sameHour = a.dataHoraInicio.substring(0, 16) === input.data_e_hora.substring(0, 16);
+					const active = a.status.id !== 7 && a.status.id !== 8; // not cancelado/faltou
+					return sameHour && active;
+				});
+				if (dup) {
+					return {
+						status: 'ok',
+						agendamento_id: dup.id,
+						cliente_id: dup.cliente.id,
+						cliente_nome: dup.cliente.nome,
+						servico_nome: dup.servico.nome,
+						data_hora_inicio: dup.dataHoraInicio,
+						duracao_em_minutos: dup.duracaoEmMinutos,
+						valor: dup.valor ?? 0,
+						cliente_novo: false,
+						ja_existia: true,
+					};
+				}
+			} catch {
+				/* idempotency check is best-effort; fall through to create */
+			}
+
+			// 3b. POST create agendamento
 			let agendamentoId: number;
 			try {
 				const created = await trinks.createAgendamento({
@@ -78,8 +110,14 @@ export function createCriarAgendamento(deps: {
 			try {
 				const readBack = await trinks.getAgendamento(agendamentoId);
 
-				// Verify key fields match
-				if (readBack.dataHoraInicio !== input.data_e_hora) {
+				// Verify key fields match. Compare only YYYY-MM-DDTHH:MM (ignore seconds, timezone, fractional ms)
+				// because Helena may pass "2026-05-22T17:30:00-03:00" or with .000Z while Trinks
+				// returns "2026-05-22T17:30:00" naked. Same moment, different string.
+				const normDH = (s: string) => {
+					const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+					return m ? `${m[1]}T${m[2]}` : s;
+				};
+				if (normDH(readBack.dataHoraInicio) !== normDH(input.data_e_hora)) {
 					return {
 						status: 'erro',
 						razao: 'Escrita não confirmada: dataHoraInicio diverge',
