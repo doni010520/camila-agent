@@ -30,5 +30,13 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		return c.json({ total_sessions: sessions.length, sessions });
 	});
 
+	/** Últimas N mensagens de uma sessão (telefone) pra inspecionar conteúdo. */
+	router.get('/admin/session/:telefone', async (c) => {
+		const telefone = c.req.param('telefone');
+		const limit = Number(c.req.query('n') ?? 10);
+		const rows = await deps.postgres.loadRecentMessages(telefone, Number.isFinite(limit) ? limit : 10);
+		return c.json({ telefone, total: rows.length, mensagens: rows });
+	});
+
 	return router;
 }
