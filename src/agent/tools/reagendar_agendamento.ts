@@ -3,9 +3,8 @@ import type { PostgresClient } from '../../clients/postgres.js';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
-
-import { ACTIVE_STATUSES } from "../../domain/trinks-status.js";
 
 const inputSchema = z.object({
 	telefone: z.string().describe('Telefone da cliente'),
@@ -18,6 +17,16 @@ const inputSchema = z.object({
 
 type Input = z.infer<typeof inputSchema>;
 
+/**
+ * Reagendar = CANCELAR antigo + CRIAR novo.
+ *
+ * Decisão de produto: queremos histórico explícito (agendamento antigo fica como
+ * `Cancelado` na Trinks, novo entra como `Aguardando confirmação`). Permite rastrear
+ * "movimento" via logs_agendamentos.
+ *
+ * NÃO usamos PUT /v1/agendamentos (update in-place) porque isso perde o histórico
+ * do horário anterior.
+ */
 export function createReagendarAgendamento(deps: {
 	trinks: TrinksClient;
 	supabase: AppSupabaseClient;
@@ -27,27 +36,31 @@ export function createReagendarAgendamento(deps: {
 
 	return {
 		name: 'reagendar_agendamento',
-		description: 'Reagenda um agendamento existente para nova data/hora.',
+		description:
+			'Reagenda um agendamento. Cancela o antigo e cria um novo na nova data/hora — mantém histórico.',
 		inputSchema,
 		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
 			const lookup = await findClienteByTelefone(input.telefone, { trinks, postgres });
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
+			const clienteId = lookup.cliente.id;
 
-			// Resolve agendamento_id
-			let agId = input.agendamento_id;
+			// 1. Resolve agendamento_id (antigo)
+			let agIdAntigo = input.agendamento_id;
 
-			if (agId === undefined) {
-				const result = await trinks.listAgendamentos({ clienteId: lookup.cliente.id });
+			if (agIdAntigo === undefined) {
+				const result = await trinks.listAgendamentos({ clienteId });
 				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
 
-				if (ativos.length === 0)
-					return { status: 'erro', razao: 'Nenhum agendamento ativo encontrado' };
+				if (ativos.length === 0) {
+					return { status: 'erro', razao: 'Nenhum agendamento ativo encontrado para reagendar' };
+				}
 				if (ativos.length === 1 && ativos[0]) {
-					agId = ativos[0].id;
+					agIdAntigo = ativos[0].id;
 				} else {
 					return {
 						status: 'aguardando_escolha',
 						total: ativos.length,
+						mensagem: 'Qual agendamento você quer reagendar?',
 						agendamentos: ativos.map((a) => ({
 							id: a.id,
 							servico: a.servico.nome,
@@ -57,64 +70,129 @@ export function createReagendarAgendamento(deps: {
 				}
 			}
 
-			// Get current agendamento to preserve fields (N3: handle error)
-			let current: Awaited<ReturnType<typeof trinks.getAgendamento>>;
+			// 2. Lê o agendamento antigo (precisa dos campos pra recriar)
+			let antigo: Awaited<ReturnType<typeof trinks.getAgendamento>>;
 			try {
-				current = await trinks.getAgendamento(agId);
+				antigo = await trinks.getAgendamento(agIdAntigo);
 			} catch (err) {
 				return {
 					status: 'erro',
-					razao: `Não foi possível ler o agendamento atual: ${err instanceof Error ? err.message : 'unknown'}`,
+					razao: `Não foi possível ler o agendamento antigo: ${err instanceof Error ? err.message : 'unknown'}`,
 				};
 			}
 
-			// PUT update
+			const dataAnterior = antigo.dataHoraInicio;
+
+			// 3. CANCELA o antigo (PATCH /status/cancelado)
 			try {
-				await trinks.updateAgendamento(agId, {
-					clienteId: current.cliente.id,
-					servicoId: current.servico.id,
-					profissionalId: current.profissional.id,
+				await trinks.cancelarAgendamento(agIdAntigo, { motivo: 'Reagendamento' });
+			} catch (err) {
+				return {
+					status: 'erro',
+					razao: `Falha ao cancelar o agendamento antigo: ${err instanceof Error ? err.message : 'unknown'}`,
+				};
+			}
+
+			// 4. Verify cancelamento (status do antigo deve ser Cancelado)
+			try {
+				const readOld = await trinks.getAgendamento(agIdAntigo);
+				if (readOld.status.id !== TRINKS_STATUS.CANCELADO) {
+					return {
+						status: 'erro',
+						razao: `Cancelamento do antigo não confirmado. Status atual: ${readOld.status.nome}`,
+					};
+				}
+			} catch (err) {
+				return {
+					status: 'erro',
+					razao: 'Não foi possível verificar cancelamento do antigo',
+					detalhes: { agIdAntigo, error: err instanceof Error ? err.message : 'unknown' },
+				};
+			}
+
+			// 5. CRIA o novo agendamento na nova data
+			let agIdNovo: number;
+			try {
+				const created = await trinks.createAgendamento({
+					clienteId: antigo.cliente.id,
+					servicoId: antigo.servico.id,
+					profissionalId: antigo.profissional.id,
 					dataHoraInicio: input.nova_data_hora,
-					duracaoEmMinutos: current.duracaoEmMinutos,
-					valor: current.valor ?? undefined,
+					duracaoEmMinutos: antigo.duracaoEmMinutos,
+					valor: antigo.valor ?? undefined,
+					observacoes: '',
+					confirmado: false,
 				});
+				agIdNovo = created.id;
 			} catch (err) {
 				return {
 					status: 'erro',
-					razao: `Falha ao reagendar: ${err instanceof Error ? err.message : 'unknown'}`,
+					razao:
+						'⚠️ Antigo já foi CANCELADO mas não consegui criar o novo. Cliente precisa de intervenção da Camila.',
+					detalhes: {
+						agIdAntigo,
+						erro: err instanceof Error ? err.message : 'unknown',
+					},
 				};
 			}
 
-			// VERIFY
+			// 6. Verify criação (compara dataHoraInicio normalizado)
 			try {
-				const readBack = await trinks.getAgendamento(agId);
-				// Compare only YYYY-MM-DDTHH:MM (ignore seconds, timezone) — same fix as criar_agendamento
+				const readNew = await trinks.getAgendamento(agIdNovo);
 				const normDH = (s: string) => {
 					const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
 					return m ? `${m[1]}T${m[2]}` : s;
 				};
-				if (normDH(readBack.dataHoraInicio) !== normDH(input.nova_data_hora)) {
+				if (normDH(readNew.dataHoraInicio) !== normDH(input.nova_data_hora)) {
 					return {
 						status: 'erro',
-						razao: 'Reagendamento não confirmado: dataHoraInicio diverge',
-						detalhes: { esperado: input.nova_data_hora, recebido: readBack.dataHoraInicio },
+						razao:
+							'⚠️ Novo criado mas dataHoraInicio diverge. Cliente precisa de intervenção da Camila.',
+						detalhes: {
+							agIdAntigo,
+							agIdNovo,
+							esperado: input.nova_data_hora,
+							recebido: readNew.dataHoraInicio,
+						},
 					};
 				}
 
+				// 7. Mirror em Supabase (best-effort): novo entra, antigo é atualizado
 				try {
-					await supabase.upsertAgendamento({ id: agId, data_hora_inicio: readBack.dataHoraInicio });
+					await supabase.upsertAgendamento({ id: agIdAntigo, status_id: TRINKS_STATUS.CANCELADO });
+				} catch {
+					/* best-effort */
+				}
+				try {
+					await supabase.upsertAgendamento({
+						id: agIdNovo,
+						status_id: readNew.status.id,
+						cliente_id: readNew.cliente.id,
+						cliente_nome: readNew.cliente.nome,
+						servico_id: readNew.servico.id,
+						servico_nome: readNew.servico.nome,
+						profissional_id: readNew.profissional.id,
+						profissional_nome: readNew.profissional.nome,
+						data_hora_inicio: readNew.dataHoraInicio,
+						duracao_em_minutos: readNew.duracaoEmMinutos,
+						valor: readNew.valor ?? undefined,
+						numero: input.telefone,
+					});
 				} catch {
 					/* best-effort */
 				}
 
+				// 8. Log estruturado
 				try {
 					await supabase.raw.from('logs_agendamentos').insert({
 						evento: 'reagendamento_agendamento',
-						agendamento_id: String(agId),
-						cliente_id: lookup.cliente.id,
+						agendamento_id: String(agIdAntigo),
+						cliente_id: clienteId,
 						detalhes: {
-							data_anterior: current.dataHoraInicio,
-							data_nova: input.nova_data_hora,
+							agendamento_id_antigo: agIdAntigo,
+							agendamento_id_novo: agIdNovo,
+							data_anterior: dataAnterior,
+							data_nova: readNew.dataHoraInicio,
 							reagendado_em: new Date().toISOString(),
 						},
 						criado_em: new Date().toISOString(),
@@ -125,16 +203,18 @@ export function createReagendarAgendamento(deps: {
 
 				return {
 					status: 'ok',
-					agendamento_id: agId,
-					servico: readBack.servico.nome,
-					data_hora_anterior: current.dataHoraInicio,
-					data_hora_nova: readBack.dataHoraInicio,
+					agendamento_id_antigo: agIdAntigo,
+					agendamento_id_novo: agIdNovo,
+					servico: readNew.servico.nome,
+					data_hora_anterior: dataAnterior,
+					data_hora_nova: readNew.dataHoraInicio,
+					mensagem: `Reagendamento concluído. Antigo (${dataAnterior}) cancelado, novo (${readNew.dataHoraInicio}) criado.`,
 				};
 			} catch (err) {
 				return {
 					status: 'erro',
-					razao: 'Reagendamento não confirmado por leitura subsequente',
-					detalhes: { agendamentoId: agId },
+					razao: 'Novo agendamento criado mas verificação subsequente falhou',
+					detalhes: { agIdAntigo, agIdNovo, error: err instanceof Error ? err.message : 'unknown' },
 				};
 			}
 		},
