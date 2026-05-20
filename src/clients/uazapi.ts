@@ -173,7 +173,10 @@ export class UazapiClient {
 			text,
 			delay: delayMs,
 		});
-		this.log.info({ number: number.slice(-8) }, 'Text sent');
+		this.log.info(
+			{ number: number.slice(-8), text: text.length > 300 ? `${text.slice(0, 300)}…` : text },
+			'Text sent',
+		);
 	}
 
 	// ── Send media: `file` is BASE64, not URL ──

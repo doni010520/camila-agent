@@ -155,9 +155,16 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 			};
 
 			const toolResult = await tool.handler(parsed.data, toolCtx);
-			log.info({ tool: tc.function.name, status: toolResult.status }, 'Tool executed');
-
 			const resultStr = JSON.stringify(toolResult);
+			log.info(
+				{
+					tool: tc.function.name,
+					status: toolResult.status,
+					args: tc.function.arguments?.slice(0, 300),
+					result: resultStr.slice(0, 600),
+				},
+				'Tool executed',
+			);
 			messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
 
 			// NOTE: tool messages are NOT saved to long-term memory.
