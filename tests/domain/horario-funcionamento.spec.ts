@@ -60,14 +60,14 @@ describe('filterByTurno', () => {
 		expect(r).toEqual(['08:00', '09:00', '10:00', '11:00']);
 	});
 
-	it('tarde filters 13:30-17:30', () => {
+	it('tarde filters 13:30-18:30 (inclui 17:30 e 18:00)', () => {
 		const r = filterByTurno(slots, 'tarde');
-		expect(r).toEqual(['13:30', '14:00', '15:00']);
+		expect(r).toEqual(['13:30', '14:00', '15:00', '17:30', '18:00']);
 	});
 
-	it('noite filters 17:30-19:30', () => {
+	it('noite filters 18:00-20:00', () => {
 		const r = filterByTurno(slots, 'noite');
-		expect(r).toEqual(['17:30', '18:00']);
+		expect(r).toEqual(['18:00']);
 	});
 
 	it('qualquer returns all except lunch', () => {

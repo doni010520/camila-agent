@@ -56,8 +56,9 @@ export function isWithinBusinessHours(dayOfWeek: number, time: string): boolean 
 }
 
 /**
- * Filter turno: manhã 08:00–12:00, tarde 13:30–17:30, noite 17:30–19:30, qualquer = all
- * Used by consultar_disponibilidade to filter horariosVagos from Trinks.
+ * Filter turno: manhã 08:00–12:00, tarde 13:30–18:30, noite 18:00–19:30, qualquer = all.
+ * Tarde e noite têm overlap intencional (17:30-18:30) — quando cliente diz "tarde"
+ * e Camila só tem 17:30/18:00 vagos, queremos oferecer mesmo assim.
  */
 export function filterByTurno(
 	horarios: string[],
@@ -68,8 +69,8 @@ export function filterByTurno(
 	}
 	const ranges: Record<string, { start: string; end: string }> = {
 		manha: { start: '08:00', end: '12:00' },
-		tarde: { start: '13:30', end: '17:30' },
-		noite: { start: '17:30', end: '19:30' },
+		tarde: { start: '13:30', end: '18:30' }, // inclui 17:30, 18:00
+		noite: { start: '18:00', end: '20:00' }, // inclui 18:00, 18:30, 19:00, 19:30
 	};
 	const range = ranges[turno];
 	if (!range) return horarios;
