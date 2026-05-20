@@ -23,6 +23,7 @@ import { getEnv } from './infra/env.js';
 import { rootLogger } from './infra/logger.js';
 import { createCronRouter } from './routes/cron.js';
 import { healthRouter } from './routes/health.js';
+import { logsRouter } from './routes/logs.js';
 import { createWebhookMessageRouter } from './routes/webhook-message.js';
 
 export interface BootResult {
@@ -76,6 +77,7 @@ export async function bootApp(): Promise<BootResult> {
 	const app = new Hono();
 
 	app.route('/', healthRouter);
+	app.route('/', logsRouter);
 
 	const webhookRouter = createWebhookMessageRouter({
 		openai,
