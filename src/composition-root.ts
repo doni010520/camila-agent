@@ -22,6 +22,7 @@ import { LeadManager } from './domain/lead.js';
 import { getEnv } from './infra/env.js';
 import { rootLogger } from './infra/logger.js';
 import { createCronRouter } from './routes/cron.js';
+import { createAdminRouter } from './routes/admin.js';
 import { healthRouter } from './routes/health.js';
 import { logsRouter } from './routes/logs.js';
 import { createWebhookMessageRouter } from './routes/webhook-message.js';
@@ -78,6 +79,7 @@ export async function bootApp(): Promise<BootResult> {
 
 	app.route('/', healthRouter);
 	app.route('/', logsRouter);
+	app.route('/', createAdminRouter({ postgres }));
 
 	const webhookRouter = createWebhookMessageRouter({
 		openai,

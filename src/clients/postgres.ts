@@ -116,6 +116,20 @@ export class PostgresClient {
 		);
 	}
 
+	/** Lista quantas mensagens cada sessão (telefone) já trocou com Helena.
+	 *  Usado pra auditoria de quem está interagindo com o sistema. */
+	async listChatSessions(): Promise<Array<{ session_id: string; total: number; ultima: string }>> {
+		return this.query<{ session_id: string; total: number; ultima: string }>(
+			`SELECT session_id,
+			        COUNT(*)::int AS total,
+			        MAX(id)::text AS ultima
+			 FROM n8n_chat_histories
+			 GROUP BY session_id
+			 ORDER BY MAX(id) DESC
+			 LIMIT 200`,
+		);
+	}
+
 	async clearChatMemory(sessionId: string): Promise<number> {
 		const result = await this.pool.query(
 			'DELETE FROM n8n_chat_histories WHERE session_id = $1',
