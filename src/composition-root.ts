@@ -60,7 +60,7 @@ export async function bootApp(): Promise<BootResult> {
 	registry.register(createCriarAgendamento({ trinks, supabase, postgres, profissionalId }));
 	registry.register(createCancelarAgendamento({ trinks, supabase, postgres }));
 	registry.register(createReagendarAgendamento({ trinks, supabase, postgres }));
-	registry.register(createListarAgendamentos({ trinks }));
+	registry.register(createListarAgendamentos({ trinks, postgres }));
 	registry.register(createEnviarCatalogo({ uazapi, supabase, leadManager }));
 	registry.register(createEnviarPdfCurso({ uazapi, supabase, leadManager }));
 	registry.register(createEnvioPix({ uazapi }));

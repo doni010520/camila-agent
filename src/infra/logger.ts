@@ -10,7 +10,13 @@ export const rootLogger = pino({
 			? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:HH:MM:ss' } }
 			: undefined,
 	base: { service: 'camila-agent' },
-	timestamp: pino.stdTimeFunctions.isoTime,
+	// Timestamps in BRT (America/Bahia, UTC-3) — easier to correlate with WhatsApp times
+	timestamp: () => {
+		const d = new Date();
+		const isoLocal = d.toLocaleString('sv-SE', { timeZone: 'America/Bahia' }).replace(' ', 'T');
+		const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+		return `,"time":"${isoLocal}.${ms}-03:00"`;
+	},
 });
 
 export type Logger = pino.Logger;

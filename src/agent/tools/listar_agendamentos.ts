@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import type { PostgresClient } from '../../clients/postgres.js';
 import type { TrinksClient } from '../../clients/trinks.js';
-import { parsePhone } from '../../domain/telefone.js';
+import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 import { ACTIVE_STATUSES } from "../../domain/trinks-status.js";
@@ -29,8 +30,9 @@ type Input = z.infer<typeof inputSchema>;
 
 export function createListarAgendamentos(deps: {
 	trinks: TrinksClient;
+	postgres: PostgresClient;
 }): ToolDefinition<Input> {
-	const { trinks } = deps;
+	const { trinks, postgres } = deps;
 
 	return {
 		name: 'listar_agendamentos',
@@ -38,20 +40,18 @@ export function createListarAgendamentos(deps: {
 			'Lista os agendamentos de um cliente. Útil para cancelar, reagendar ou verificar histórico.',
 		inputSchema,
 		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
-			// 1. Find cliente by phone
-			const parts = parsePhone(input.telefone);
-			if (!parts) return { status: 'erro', razao: 'Telefone inválido' };
+			// 1. Find cliente (cache Postgres + fallback Trinks)
+			const lookup = await findClienteByTelefone(input.telefone, { trinks, postgres });
+			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
+			const clienteId = lookup.cliente.id;
 
-			const clientes = await trinks.listClientes({ telefone: parts.numero });
-			if (clientes.data.length === 0) {
-				return { status: 'erro', razao: 'Cliente não encontrado no Trinks' };
-			}
-
-			const clienteId = clientes.data[0]?.id;
-			if (!clienteId) return { status: 'erro', razao: 'Cliente sem ID' };
-
-			// 2. List agendamentos
-			const result = await trinks.listAgendamentos({ clienteId });
+			// 2. List agendamentos futuros (evita lixo histórico)
+			const hoje = new Date().toISOString().split('T')[0];
+			const result = await trinks.listAgendamentos({
+				clienteId,
+				dataInicio: `${hoje}T00:00:00`,
+				dataFim: '2027-12-31T23:59:59',
+			});
 			let agendamentos = result.data;
 
 			if (input.apenas_ativos) {
