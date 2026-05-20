@@ -9,45 +9,39 @@ import { isRetryableStatus, withRetry } from '../infra/retry.js';
 // Schemas — from REFERENCE-PAYLOADS.md real production webhooks
 // ═══════════════════════════════════════════════════════════════
 
-export const uazapiMessageTypeSchema = z.enum([
-	'conversation',
-	'extendedTextMessage',
-	'ephemeralMessage',
-	'audioMessage',
-	'imageMessage',
-	'documentMessage',
-	'locationMessage',
-	'stickerMessage',
-	'contactMessage',
-]);
+// messageType vem em CamelCase ou camelCase dependendo da versão UAZAPI.
+// Lista NÃO é exaustiva — aceita string livre, mas categoriza pelas conhecidas.
+export const uazapiMessageTypeSchema = z.string();
 
-export const uazapiMessageContentSchema = z.object({
-	URL: z.string().optional(),
-	mediaKey: z.string().optional(),
-	degreesLatitude: z.number().nullable().optional(),
-	degreesLongitude: z.number().nullable().optional(),
-});
+export const uazapiMessageContentSchema = z
+	.object({
+		URL: z.string().optional(),
+		mediaKey: z.string().optional(),
+		degreesLatitude: z.number().nullable().optional(),
+		degreesLongitude: z.number().nullable().optional(),
+	})
+	.passthrough();
 
 // Real field is `chatid`, NOT `sender_pn`
-export const uazapiMessageSchema = z.object({
-	chatid: z.string(),
-	text: z.string().optional().default(''),
-	messageType: uazapiMessageTypeSchema,
-	wasSentByApi: z.boolean().optional().default(false),
-	fromMe: z.boolean().optional().default(false),
-	content: uazapiMessageContentSchema.optional(),
-	buttonOrListid: z.string().optional().default(''),
-});
+// Schema permissivo: UAZAPI manda dezenas de campos extras que ignoramos.
+export const uazapiMessageSchema = z
+	.object({
+		chatid: z.string(),
+		text: z.string().optional().default(''),
+		messageType: uazapiMessageTypeSchema,
+		wasSentByApi: z.boolean().optional().default(false),
+		fromMe: z.boolean().optional().default(false),
+		content: z.unknown().optional(),
+		buttonOrListid: z.string().optional().default(''),
+	})
+	.passthrough();
 
 // Full webhook: chat info + message + token
+// chat tem 50+ campos com tipos variados (wa_label = array, lead_tags = array, etc.)
+// só nos importamos com wa_name pra extrair nome do contato.
 export const uazapiWebhookSchema = z.object({
 	body: z.object({
-		chat: z
-			.object({
-				wa_name: z.string().optional(),
-				wa_label: z.string().optional(),
-			})
-			.optional(),
+		chat: z.unknown().optional(),
 		message: uazapiMessageSchema,
 		token: z.string().optional(),
 		created_at: z.string().optional(),

@@ -289,10 +289,10 @@ describe('uazapiWebhookSchema', () => {
 		expect(r.success).toBe(false);
 	});
 
-	it('rejects old type enum (conversation, not text)', () => {
+	it('aceita qualquer messageType (schema permissivo pra novos tipos UAZAPI v2)', () => {
 		const r = uazapiWebhookSchema.safeParse({
 			body: { message: { chatid: '5571@s.whatsapp.net', messageType: 'text' } },
 		});
-		expect(r.success).toBe(false);
+		expect(r.success).toBe(true);
 	});
 });

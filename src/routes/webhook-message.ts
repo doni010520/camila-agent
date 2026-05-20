@@ -124,7 +124,16 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		}
 
 		const { message } = parsed.data.body;
-		const chat = parsed.data.body.chat;
+		const rawChat = parsed.data.body.chat;
+		const chat = (rawChat && typeof rawChat === 'object'
+			? (rawChat as { wa_name?: unknown; wa_label?: unknown })
+			: undefined);
+		const waName = typeof chat?.wa_name === 'string' ? chat.wa_name : undefined;
+		const waLabel = typeof chat?.wa_label === 'string'
+			? chat.wa_label
+			: Array.isArray(chat?.wa_label) && typeof chat.wa_label[0] === 'string'
+				? (chat.wa_label[0] as string)
+				: undefined;
 
 		// Ignore messages sent by the API itself (avoid loops)
 		if (message.fromMe || message.wasSentByApi) {
@@ -154,8 +163,8 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		// Get or create lead
 		const lead = await leadManager.getOrCreate({
 			telefone,
-			nome: chat?.wa_name,
-			wa_label: chat?.wa_label,
+			nome: waName,
+			wa_label: waLabel,
 		});
 
 		// Extract text early so magic commands can run even with IA desativada.
@@ -178,7 +187,10 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		let text = message.text ?? '';
 
 		if (MEDIA_TYPES.has(message.messageType)) {
-			const mediaUrl = message.content?.URL;
+			const mediaContent = (message.content && typeof message.content === 'object'
+				? (message.content as { URL?: unknown })
+				: undefined);
+			const mediaUrl = typeof mediaContent?.URL === 'string' ? mediaContent.URL : undefined;
 			if (mediaUrl) {
 				try {
 					text = await mediaRouter.process(message.messageType, mediaUrl);
