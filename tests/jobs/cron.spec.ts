@@ -48,6 +48,9 @@ describe('runLembreteAmanha', () => {
 				sendText: vi.fn().mockResolvedValue(undefined),
 				sendMenu: vi.fn().mockResolvedValue(undefined),
 			},
+			postgres: {
+				findPhoneByTrinksId: vi.fn().mockResolvedValue(null),
+			},
 			profissionalId: 170223,
 		};
 	}

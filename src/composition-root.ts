@@ -89,7 +89,7 @@ export async function bootApp(): Promise<BootResult> {
 	});
 	app.route('/', webhookRouter);
 
-	const cronRouter = createCronRouter({ trinks, supabase, uazapi });
+	const cronRouter = createCronRouter({ trinks, supabase, uazapi, postgres });
 	app.route('/', cronRouter);
 
 	// ── Global error handler ──

@@ -154,4 +154,16 @@ export class PostgresClient {
 		if (rows.length === 0) return null;
 		return clienteLookupSchema.parse(rows[0]);
 	}
+
+	/** Look up phone by Trinks cliente id (used by lembrete job when Trinks GET
+	 *  returns the cliente without telefones populated — common when the cliente
+	 *  was imported pelo painel sem cadastro de telefone). */
+	async findPhoneByTrinksId(id: number): Promise<string | null> {
+		const rows = await this.query<{ telefone: string | null }>(
+			`SELECT telefone FROM clientes WHERE id = $1 LIMIT 1`,
+			[id],
+		);
+		const tel = rows[0]?.telefone;
+		return tel && tel.length >= 10 ? tel : null;
+	}
 }

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { PostgresClient } from '../clients/postgres.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
@@ -11,6 +12,7 @@ export interface CronDeps {
 	trinks: TrinksClient;
 	supabase: AppSupabaseClient;
 	uazapi: UazapiClient;
+	postgres: PostgresClient;
 }
 
 export function createCronRouter(deps: CronDeps): Hono {
@@ -35,6 +37,7 @@ export function createCronRouter(deps: CronDeps): Hono {
 				trinks: deps.trinks,
 				supabase: deps.supabase,
 				uazapi: deps.uazapi,
+				postgres: deps.postgres,
 				profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
 				logger: log,
 			});

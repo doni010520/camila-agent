@@ -1,3 +1,4 @@
+import type { PostgresClient } from '../clients/postgres.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
@@ -11,6 +12,7 @@ export interface LembreteDeps {
 	trinks: TrinksClient;
 	supabase: AppSupabaseClient;
 	uazapi: UazapiClient;
+	postgres: PostgresClient;
 	profissionalId: number;
 	logger?: Logger;
 }
@@ -62,13 +64,21 @@ export async function runLembreteAmanha(deps: LembreteDeps): Promise<LembreteRes
 			continue;
 		}
 		const telefone = cliente.telefones?.[0];
-		if (!telefone) {
-			log.warn({ agId: ag.id, clienteNome: ag.cliente.nome }, 'No phone found for lembrete');
-			erros++;
-			continue;
+		let number: string;
+		if (telefone) {
+			number = `${telefone.ddi ?? '55'}${telefone.ddd ?? '71'}${telefone.telefone}`;
+		} else {
+			// Fallback: muitos clientes têm cadastro Trinks sem telefone preenchido
+			// (importados via painel). Buscamos no cache local Postgres `clientes`.
+			const fallback = await deps.postgres.findPhoneByTrinksId(ag.cliente.id);
+			if (!fallback) {
+				log.warn({ agId: ag.id, clienteNome: ag.cliente.nome, clienteId: ag.cliente.id }, 'No phone found for lembrete (Trinks + cache)');
+				erros++;
+				continue;
+			}
+			number = fallback;
+			log.info({ agId: ag.id, clienteId: ag.cliente.id }, 'Phone resolved via postgres cache');
 		}
-
-		const number = `${telefone.ddi ?? '55'}${telefone.ddd ?? '71'}${telefone.telefone}`;
 		const formatted = formatDateTimeBRT(ag.dataHoraInicio);
 
 		// 4. Send confirm/decline buttons
