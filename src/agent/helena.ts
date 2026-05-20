@@ -11,6 +11,7 @@ import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { createRequestLogger } from '../infra/logger.js';
+import { recordToolError } from '../infra/tool-error-tracker.js';
 import type { ToolRegistry } from './tools/_registry.js';
 
 // Load prompt template once at module init
@@ -165,6 +166,14 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 				},
 				'Tool executed',
 			);
+			if (toolResult.status === 'erro') {
+				const razao = typeof toolResult.razao === 'string' ? toolResult.razao : 'erro sem razão';
+				recordToolError(tc.function.name, razao, {
+					sendAlert: async (text) => {
+						await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, text);
+					},
+				});
+			}
 			messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
 
 			// NOTE: tool messages are NOT saved to long-term memory.

@@ -11,6 +11,9 @@ vi.mock('../../src/domain/debounce.js', () => ({
 }));
 
 const mockLeadManager = {
+	maybeAutoReactivate: vi.fn().mockResolvedValue(false),
+	setIaAtiva: vi.fn(),
+	setVip: vi.fn(),
 	getOrCreate: vi.fn().mockResolvedValue({
 		id: 'uuid',
 		telefone: '5571999999999',

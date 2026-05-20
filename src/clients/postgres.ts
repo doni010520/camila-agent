@@ -155,6 +155,28 @@ export class PostgresClient {
 		return clienteLookupSchema.parse(rows[0]);
 	}
 
+	/** Upsert a cliente record from Trinks sync. Returns whether the row was
+	 *  newly inserted or updated. */
+	async upsertCliente(input: {
+		id: number;
+		nome: string;
+		email: string | null;
+		telefone: string | null;
+	}): Promise<'inserted' | 'updated'> {
+		const result = await this.pool.query<{ xmax: string }>(
+			`INSERT INTO clientes (id, nome, email, telefone)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (id) DO UPDATE SET
+			   nome = EXCLUDED.nome,
+			   email = COALESCE(EXCLUDED.email, clientes.email),
+			   telefone = COALESCE(EXCLUDED.telefone, clientes.telefone)
+			 RETURNING xmax::text`,
+			[input.id, input.nome, input.email, input.telefone],
+		);
+		// xmax = '0' means INSERT; non-zero means UPDATE
+		return result.rows[0]?.xmax === '0' ? 'inserted' : 'updated';
+	}
+
 	/** Look up phone by Trinks cliente id (used by lembrete job when Trinks GET
 	 *  returns the cliente without telefones populated — common when the cliente
 	 *  was imported pelo painel sem cadastro de telefone). */

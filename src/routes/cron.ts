@@ -7,6 +7,7 @@ import { getEnv } from '../infra/env.js';
 import { rootLogger } from '../infra/logger.js';
 import { runEnqueteFinalizacao } from '../jobs/enquete-finalizacao.js';
 import { runLembreteAmanha } from '../jobs/lembrete-amanha.js';
+import { runSyncClientes } from '../jobs/sync-clientes.js';
 
 export interface CronDeps {
 	trinks: TrinksClient;
@@ -61,6 +62,21 @@ export function createCronRouter(deps: CronDeps): Hono {
 			return c.json({ status: 'ok', ...result });
 		} catch (err) {
 			log.error({ err }, 'Cron enquete failed');
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	router.post('/cron/sync-clientes', async (c) => {
+		const log = rootLogger.child({ job: 'cron-sync-clientes' });
+		try {
+			const result = await runSyncClientes({
+				trinks: deps.trinks,
+				postgres: deps.postgres,
+				logger: log,
+			});
+			return c.json({ status: 'ok', ...result });
+		} catch (err) {
+			log.error({ err }, 'Cron sync-clientes failed');
 			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
 		}
 	});

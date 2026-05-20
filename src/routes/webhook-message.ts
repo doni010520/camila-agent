@@ -111,10 +111,16 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		const earlyText = (message.text ?? '').trim().toLowerCase();
 		const isCommand = earlyText.startsWith('#');
 
-		// If IA disabled, ignore — UNLESS the message is a magic command (#reset, #ia-on)
+		// Tenta reativar IA automaticamente se passou >24h desde transferir_humano
 		if (lead.ia_on_off === 'off' && !isCommand) {
-			log.info('IA disabled for this lead, ignoring');
-			return c.json({ status: 'ok', ignored: 'ia_desativada' });
+			const reactivated = await leadManager.maybeAutoReactivate(lead, 24);
+			if (reactivated) {
+				lead.ia_on_off = 'on';
+				log.info('IA auto-reativada (TTL 24h)');
+			} else {
+				log.info('IA disabled for this lead, ignoring');
+				return c.json({ status: 'ok', ignored: 'ia_desativada' });
+			}
 		}
 
 		// Route by message type

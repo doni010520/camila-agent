@@ -110,9 +110,36 @@ export class LeadManager {
 	}
 
 	async setIaAtiva(telefone: string, active: boolean): Promise<void> {
-		// ia_on_off is TEXT 'on'/'off' (legacy n8n format), not boolean
-		await this.updateLead(telefone, { ia_on_off: active ? 'on' : 'off' });
+		// ia_on_off is TEXT 'on'/'off' (legacy n8n format), not boolean.
+		// Quando desativa, registra timestamp em metadata.ia_off_since pra TTL automático.
+		const lead = await this.getLead(telefone);
+		const meta = { ...(lead?.metadata ?? {}) } as Record<string, unknown>;
+		if (active) {
+			delete meta.ia_off_since;
+		} else {
+			meta.ia_off_since = new Date().toISOString();
+		}
+		await this.updateLead(telefone, {
+			ia_on_off: active ? 'on' : 'off',
+			metadata: meta as LeadCamilaRow['metadata'],
+		});
 		this.log.info({ telefone: telefone.slice(-8), ia_ativa: active }, 'IA status changed');
+	}
+
+	/** Auto-reactivate IA if it has been off for more than `maxHours` hours (default 24h). */
+	async maybeAutoReactivate(lead: LeadCamilaRow, maxHours = 24): Promise<boolean> {
+		if (lead.ia_on_off !== 'off') return false;
+		const meta = (lead.metadata ?? {}) as Record<string, unknown>;
+		const since = typeof meta.ia_off_since === 'string' ? meta.ia_off_since : undefined;
+		if (!since) return false;
+		const hours = (Date.now() - new Date(since).getTime()) / (1000 * 60 * 60);
+		if (hours < maxHours) return false;
+		await this.setIaAtiva(lead.telefone, true);
+		this.log.info(
+			{ telefone: lead.telefone.slice(-8), hoursOff: Math.round(hours) },
+			'IA auto-reactivated after TTL',
+		);
+		return true;
 	}
 
 	/** Check if IA is active for this lead (reads ia_on_off legacy column) */
