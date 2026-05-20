@@ -58,6 +58,7 @@ export async function runSyncClientes(deps: SyncClientesDeps): Promise<SyncClien
 					nome: c.nome,
 					email: c.email ?? null,
 					telefone,
+					dataCadastro: c.dataCadastro ?? null,
 				});
 				if (r === 'inserted') inseridos++;
 				else atualizados++;

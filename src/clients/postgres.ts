@@ -162,16 +162,17 @@ export class PostgresClient {
 		nome: string;
 		email: string | null;
 		telefone: string | null;
+		dataCadastro: string | null;
 	}): Promise<'inserted' | 'updated'> {
 		const result = await this.pool.query<{ xmax: string }>(
-			`INSERT INTO clientes (id, nome, email, telefone)
-			 VALUES ($1, $2, $3, $4)
+			`INSERT INTO clientes (id, nome, email, telefone, data_cadastro)
+			 VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()))
 			 ON CONFLICT (id) DO UPDATE SET
 			   nome = EXCLUDED.nome,
 			   email = COALESCE(EXCLUDED.email, clientes.email),
 			   telefone = COALESCE(EXCLUDED.telefone, clientes.telefone)
 			 RETURNING xmax::text`,
-			[input.id, input.nome, input.email, input.telefone],
+			[input.id, input.nome, input.email, input.telefone, input.dataCadastro],
 		);
 		// xmax = '0' means INSERT; non-zero means UPDATE
 		return result.rows[0]?.xmax === '0' ? 'inserted' : 'updated';
