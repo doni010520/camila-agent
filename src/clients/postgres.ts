@@ -130,6 +130,26 @@ export class PostgresClient {
 		);
 	}
 
+	/** Lista sessões onde a última mensagem é do usuário (sem resposta da Helena).
+	 *  Útil pra investigar relatos do tipo "Helena não respondeu". */
+	async listSessionsSemResposta(): Promise<Array<{ session_id: string; ultima_id: number; ultima_msg: string }>> {
+		return this.query<{ session_id: string; ultima_id: number; ultima_msg: string }>(
+			`WITH ult AS (
+			   SELECT DISTINCT ON (session_id)
+			     session_id, id AS ultima_id,
+			     (message->>'type') AS tipo,
+			     (message->>'content') AS ultima_msg
+			   FROM n8n_chat_histories
+			   ORDER BY session_id, id DESC
+			 )
+			 SELECT session_id, ultima_id, ultima_msg
+			 FROM ult
+			 WHERE tipo = 'human'
+			 ORDER BY ultima_id DESC
+			 LIMIT 50`,
+		);
+	}
+
 	async clearChatMemory(sessionId: string): Promise<number> {
 		const result = await this.pool.query(
 			'DELETE FROM n8n_chat_histories WHERE session_id = $1',

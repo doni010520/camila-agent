@@ -30,6 +30,12 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		return c.json({ total_sessions: sessions.length, sessions });
 	});
 
+	/** Sessões com última mensagem do usuário sem resposta da Helena. */
+	router.get('/admin/sem-resposta', async (c) => {
+		const sessions = await deps.postgres.listSessionsSemResposta();
+		return c.json({ total: sessions.length, sessions });
+	});
+
 	/** Últimas N mensagens de uma sessão (telefone) pra inspecionar conteúdo. */
 	router.get('/admin/session/:telefone', async (c) => {
 		const telefone = c.req.param('telefone');
