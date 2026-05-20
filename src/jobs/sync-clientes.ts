@@ -28,7 +28,7 @@ export interface SyncClientesResult {
 }
 
 const PAGE_SIZE = 200;
-const MAX_PAGES = 50; // safety cap (10k clientes)
+const MAX_PAGES = 100; // safety cap (20k clientes)
 
 export async function runSyncClientes(deps: SyncClientesDeps): Promise<SyncClientesResult> {
 	const log = deps.logger ?? rootLogger.child({ job: 'sync-clientes' });
@@ -40,9 +40,11 @@ export async function runSyncClientes(deps: SyncClientesDeps): Promise<SyncClien
 	let semTelefone = 0;
 	let erros = 0;
 
+	let totalRecords: number | undefined;
 	for (let page = 1; page <= MAX_PAGES; page++) {
 		const result = await deps.trinks.listClientes({ page, pageSize: PAGE_SIZE });
 		if (result.data.length === 0) break;
+		if (totalRecords === undefined && result.totalRecords) totalRecords = result.totalRecords;
 
 		for (const c of result.data) {
 			total++;
@@ -68,8 +70,9 @@ export async function runSyncClientes(deps: SyncClientesDeps): Promise<SyncClien
 			}
 		}
 
-		// Se a página veio com menos que PAGE_SIZE, é a última
-		if (result.data.length < PAGE_SIZE) break;
+		// Para se totalRecords reportado pela Trinks foi atingido, ou se a
+		// pagina veio com menos que o tamanho efetivo (Trinks pode capar em 50).
+		if (totalRecords !== undefined && total >= totalRecords) break;
 	}
 
 	log.info({ total, inseridos, atualizados, semTelefone, erros }, 'Sync-clientes complete');
