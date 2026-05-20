@@ -36,18 +36,21 @@ export async function findClienteByTelefone(
 	}
 
 	// Strategy 0: local Postgres cache (table `clientes`, 379+ rows synced from Trinks)
-	// This avoids 3 sequential Trinks API calls (each with retry) when cliente already
-	// known locally. Falls through to Trinks only on cache miss.
-	const pgResult = await deps.postgres.findClienteByPhone(parts.last8);
-	if (pgResult) {
-		try {
-			const trinksCliente = await deps.trinks.getCliente(pgResult.id);
-			log.debug({ strategy: 'postgres_cache', clienteId: pgResult.id }, 'Found via local cache');
-			return { cliente: trinksCliente, strategy: 'postgres_cache' };
-		} catch {
-			// Local cache is stale — fall through to Trinks search
-			log.warn({ pgClienteId: pgResult.id }, 'Local cache hit but Trinks getCliente failed');
+	// Falls through to Trinks search on cache miss OR any error in the cache path.
+	try {
+		const pgResult = await deps.postgres.findClienteByPhone(parts.last8);
+		if (pgResult) {
+			try {
+				const trinksCliente = await deps.trinks.getCliente(pgResult.id);
+				log.debug({ strategy: 'postgres_cache', clienteId: pgResult.id }, 'Found via local cache');
+				return { cliente: trinksCliente, strategy: 'postgres_cache' };
+			} catch {
+				log.warn({ pgClienteId: pgResult.id }, 'Cache hit but Trinks getCliente failed');
+			}
 		}
+	} catch (err) {
+		// Schema mismatch, DB error, etc — never let cache break the lookup
+		log.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Local cache query failed');
 	}
 
 	// Strategy 1: full E.164 ("5571999999999")

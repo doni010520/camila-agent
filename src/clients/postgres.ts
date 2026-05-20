@@ -18,7 +18,8 @@ export const chatMemoryRowSchema = z.object({
 });
 
 export const clienteLookupSchema = z.object({
-	id: z.number(),
+	// pg driver returns bigint as string by default; coerce to number
+	id: z.coerce.number(),
 	nome: z.string(),
 	email: z.string().nullable().optional(),
 	telefone: z.string(),
