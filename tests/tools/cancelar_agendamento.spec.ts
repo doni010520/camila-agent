@@ -27,7 +27,7 @@ function makeDeps(overrides?: { getAfterCancel?: ReturnType<typeof vi.fn> }) {
 		cancelarAgendamento: vi.fn().mockResolvedValue({ ok: true, status: 204, body: '' }),
 		getAgendamento:
 			overrides?.getAfterCancel ??
-			vi.fn().mockResolvedValue({ ...AG, status: { id: 7, nome: 'Cancelado' } }),
+			vi.fn().mockResolvedValue({ ...AG, status: { id: 9, nome: 'Cancelado' } }),
 		getCliente: vi.fn().mockResolvedValue({ id: 100, nome: 'Maria' }),
 	};
 	const supabase = {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
+import { TRINKS_STATUS } from '../../domain/trinks-status.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -33,7 +34,7 @@ export function createMarcarFalta(deps: {
 			// VERIFY: status should be 8 (Cliente não compareceu)
 			try {
 				const readBack = await trinks.getAgendamento(input.agendamento_id);
-				if (readBack.status.id !== 8) {
+				if (readBack.status.id !== TRINKS_STATUS.CLIENTE_FALTOU) {
 					return {
 						status: 'erro',
 						razao: `Falta não confirmada. Status atual: ${readBack.status.nome} (${readBack.status.id})`,
@@ -41,7 +42,7 @@ export function createMarcarFalta(deps: {
 				}
 
 				try {
-					await supabase.upsertAgendamento({ id: input.agendamento_id, status_id: 8 });
+					await supabase.upsertAgendamento({ id: input.agendamento_id, status_id: TRINKS_STATUS.CLIENTE_FALTOU });
 				} catch {
 					/* best-effort */
 				}

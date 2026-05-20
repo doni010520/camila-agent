@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { parsePhone } from '../../domain/telefone.js';
+import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -66,8 +67,7 @@ export function createCriarAgendamento(deps: {
 				});
 				const dup = existing.data?.find((a) => {
 					const sameHour = a.dataHoraInicio.substring(0, 16) === input.data_e_hora.substring(0, 16);
-					const active = a.status.id !== 7 && a.status.id !== 8; // not cancelado/faltou
-					return sameHour && active;
+					return sameHour && ACTIVE_STATUSES.has(a.status.id);
 				});
 				if (dup) {
 					return {

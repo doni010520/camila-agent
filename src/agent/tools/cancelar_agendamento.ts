@@ -5,7 +5,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
-const ACTIVE_STATUSES = new Set([1, 2, 3, 4]);
+import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
 
 const inputSchema = z.object({
 	telefone: z.string().describe('Telefone da cliente'),
@@ -81,7 +81,7 @@ export function createCancelarAgendamento(deps: {
 				// VERIFY: GET and check status === 7 (Cancelado)
 				try {
 					const readBack = await trinks.getAgendamento(agId);
-					if (readBack.status.id !== 7) {
+					if (readBack.status.id !== TRINKS_STATUS.CANCELADO) {
 						return {
 							status: 'erro',
 							razao: `Cancelamento não confirmado. Status atual: ${readBack.status.nome} (${readBack.status.id})`,
@@ -90,7 +90,7 @@ export function createCancelarAgendamento(deps: {
 
 					// Mirror to Supabase (best-effort)
 					try {
-						await supabase.upsertAgendamento({ id: agId, status_id: 7 });
+						await supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.CANCELADO });
 					} catch {
 						/* best-effort */
 					}

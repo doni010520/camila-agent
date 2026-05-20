@@ -3,7 +3,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { parsePhone } from '../../domain/telefone.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
-const ACTIVE_STATUSES = new Set([1, 2, 3, 4]);
+import { ACTIVE_STATUSES } from "../../domain/trinks-status.js";
 
 const STATUS_NAMES: Record<number, string> = {
 	1: 'Agendado',

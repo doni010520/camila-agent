@@ -5,7 +5,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
-const ACTIVE_STATUSES = new Set([1, 2, 3, 4]);
+import { ACTIVE_STATUSES } from "../../domain/trinks-status.js";
 
 const inputSchema = z.object({
 	telefone: z.string().describe('Telefone da cliente'),
@@ -88,7 +88,12 @@ export function createReagendarAgendamento(deps: {
 			// VERIFY
 			try {
 				const readBack = await trinks.getAgendamento(agId);
-				if (readBack.dataHoraInicio !== input.nova_data_hora) {
+				// Compare only YYYY-MM-DDTHH:MM (ignore seconds, timezone) — same fix as criar_agendamento
+				const normDH = (s: string) => {
+					const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+					return m ? `${m[1]}T${m[2]}` : s;
+				};
+				if (normDH(readBack.dataHoraInicio) !== normDH(input.nova_data_hora)) {
 					return {
 						status: 'erro',
 						razao: 'Reagendamento não confirmado: dataHoraInicio diverge',
