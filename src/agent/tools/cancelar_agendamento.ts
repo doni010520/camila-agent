@@ -36,41 +36,43 @@ export function createCancelarAgendamento(deps: {
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
 			const clienteId = lookup.cliente.id;
 
-			// 2. If no agendamento_id, list active ones (futuros — evita lixo histórico)
-			if (input.agendamento_id === undefined) {
-				const hoje = new Date().toISOString().split('T')[0];
-				const result = await trinks.listAgendamentos({
-					clienteId: lookup.cliente.id,
-					dataInicio: `${hoje}T00:00:00`,
-					dataFim: '2027-12-31T23:59:59',
-				});
-				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
+			// 2. Sempre lista ativos primeiro (futuros — evita lixo histórico).
+			//    Se agendamento_id veio do LLM, validamos que existe na lista —
+			//    se não existir, o LLM alucinou; devolvemos `aguardando_escolha`
+			//    em vez de tentar PATCH com ID inválido (e estourar 400/404).
+			const hoje = new Date().toISOString().split('T')[0];
+			const result = await trinks.listAgendamentos({
+				clienteId: lookup.cliente.id,
+				dataInicio: `${hoje}T00:00:00`,
+				dataFim: '2027-12-31T23:59:59',
+			});
+			const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
 
-				if (ativos.length === 0) {
-					return { status: 'ok', total: 0, mensagem: 'Nenhum agendamento ativo encontrado.' };
-				}
-
-				if (ativos.length === 1 && ativos[0]) {
-					// Auto-cancel single active
-					return await cancelAndVerify(ativos[0].id, input.motivo);
-				}
-
-				// Multiple — return list for choice
-				return {
-					status: 'aguardando_escolha',
-					total: ativos.length,
-					agendamentos: ativos.map((a) => ({
-						id: a.id,
-						servico: a.servico.nome,
-						data_hora: a.dataHoraInicio,
-						profissional: a.profissional.nome,
-						status: a.status.nome,
-					})),
-				};
+			if (ativos.length === 0) {
+				return { status: 'ok', total: 0, mensagem: 'Nenhum agendamento ativo encontrado.' };
 			}
 
-			// 3. Cancel specific agendamento
-			return await cancelAndVerify(input.agendamento_id, input.motivo);
+			if (input.agendamento_id !== undefined) {
+				const exists = ativos.some((a) => a.id === input.agendamento_id);
+				if (exists) return await cancelAndVerify(input.agendamento_id, input.motivo);
+				// ID inválido/alucinado: re-lista pra Helena escolher de novo
+			}
+
+			if (ativos.length === 1 && ativos[0]) {
+				return await cancelAndVerify(ativos[0].id, input.motivo);
+			}
+
+			return {
+				status: 'aguardando_escolha',
+				total: ativos.length,
+				agendamentos: ativos.map((a) => ({
+					id: a.id,
+					servico: a.servico.nome,
+					data_hora: a.dataHoraInicio,
+					profissional: a.profissional.nome,
+					status: a.status.nome,
+				})),
+			};
 
 			async function cancelAndVerify(agId: number, motivo: string): Promise<ToolResult> {
 				// PATCH cancel

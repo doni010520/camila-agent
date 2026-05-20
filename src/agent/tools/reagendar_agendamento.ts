@@ -44,23 +44,29 @@ export function createReagendarAgendamento(deps: {
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
 			const clienteId = lookup.cliente.id;
 
-			// 1. Resolve agendamento_id (antigo)
-			let agIdAntigo = input.agendamento_id;
+			// 1. Sempre lista ativos primeiro. Se agendamento_id veio mas não existe
+			//    na lista, é alucinação do LLM → devolve aguardando_escolha.
+			const hoje = new Date().toISOString().split('T')[0];
+			const listResult = await trinks.listAgendamentos({
+				clienteId,
+				dataInicio: `${hoje}T00:00:00`,
+				dataFim: '2027-12-31T23:59:59',
+			});
+			const ativos = listResult.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
+
+			if (ativos.length === 0) {
+				return { status: 'erro', razao: 'Nenhum agendamento ativo encontrado para reagendar' };
+			}
+
+			let agIdAntigo: number | undefined;
+			if (input.agendamento_id !== undefined) {
+				if (ativos.some((a) => a.id === input.agendamento_id)) {
+					agIdAntigo = input.agendamento_id;
+				}
+				// senão: cai pro fluxo de escolha abaixo
+			}
 
 			if (agIdAntigo === undefined) {
-				// Só busca agendamentos de hoje em diante (evita lixo histórico do n8n velho:
-				// agendamentos antigos que nunca foram cancelados nem finalizados).
-				const hoje = new Date().toISOString().split('T')[0];
-				const result = await trinks.listAgendamentos({
-					clienteId,
-					dataInicio: `${hoje}T00:00:00`,
-					dataFim: '2027-12-31T23:59:59',
-				});
-				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
-
-				if (ativos.length === 0) {
-					return { status: 'erro', razao: 'Nenhum agendamento ativo encontrado para reagendar' };
-				}
 				if (ativos.length === 1 && ativos[0]) {
 					agIdAntigo = ativos[0].id;
 				} else {
