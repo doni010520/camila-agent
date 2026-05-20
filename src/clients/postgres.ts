@@ -203,7 +203,7 @@ export class PostgresClient {
 		}
 	}
 
-	async listWebhookInbound(opts: { telefone?: string; limit?: number }): Promise<
+	async listWebhookInbound(opts: { telefone?: string; limit?: number; includePayload?: boolean }): Promise<
 		Array<{
 			id: number;
 			recebido_em: string;
@@ -214,12 +214,16 @@ export class PostgresClient {
 			from_me: boolean;
 			was_sent_by_api: boolean;
 			button_id: string | null;
+			payload?: string;
 		}>
 	> {
 		const limit = opts.limit ?? 50;
+		const cols = opts.includePayload
+			? 'id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id, payload'
+			: 'id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id';
 		if (opts.telefone) {
 			return this.query(
-				`SELECT id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id
+				`SELECT ${cols}
 				 FROM webhook_inbound
 				 WHERE telefone = $1 OR chatid LIKE $2
 				 ORDER BY id DESC LIMIT $3`,
@@ -227,7 +231,7 @@ export class PostgresClient {
 			);
 		}
 		return this.query(
-			`SELECT id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id
+			`SELECT ${cols}
 			 FROM webhook_inbound
 			 ORDER BY id DESC LIMIT $1`,
 			[limit],

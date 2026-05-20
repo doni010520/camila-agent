@@ -33,7 +33,11 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	/** Últimas mensagens inbound recebidas no webhook UAZAPI. */
 	router.get('/admin/inbound', async (c) => {
 		const limit = Number(c.req.query('n') ?? 50);
-		const rows = await deps.postgres.listWebhookInbound({ limit: Number.isFinite(limit) ? limit : 50 });
+		const includePayload = c.req.query('payload') === '1';
+		const rows = await deps.postgres.listWebhookInbound({
+			limit: Number.isFinite(limit) ? limit : 50,
+			includePayload,
+		});
 		return c.json({ total: rows.length, mensagens: rows });
 	});
 
