@@ -36,9 +36,14 @@ export function createCancelarAgendamento(deps: {
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
 			const clienteId = lookup.cliente.id;
 
-			// 2. If no agendamento_id, list active ones
+			// 2. If no agendamento_id, list active ones (futuros — evita lixo histórico)
 			if (input.agendamento_id === undefined) {
-				const result = await trinks.listAgendamentos({ clienteId: lookup.cliente.id });
+				const hoje = new Date().toISOString().split('T')[0];
+				const result = await trinks.listAgendamentos({
+					clienteId: lookup.cliente.id,
+					dataInicio: `${hoje}T00:00:00`,
+					dataFim: '2027-12-31T23:59:59',
+				});
 				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
 
 				if (ativos.length === 0) {

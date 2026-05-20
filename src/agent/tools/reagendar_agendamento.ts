@@ -48,7 +48,14 @@ export function createReagendarAgendamento(deps: {
 			let agIdAntigo = input.agendamento_id;
 
 			if (agIdAntigo === undefined) {
-				const result = await trinks.listAgendamentos({ clienteId });
+				// Só busca agendamentos de hoje em diante (evita lixo histórico do n8n velho:
+				// agendamentos antigos que nunca foram cancelados nem finalizados).
+				const hoje = new Date().toISOString().split('T')[0];
+				const result = await trinks.listAgendamentos({
+					clienteId,
+					dataInicio: `${hoje}T00:00:00`,
+					dataFim: '2027-12-31T23:59:59',
+				});
 				const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
 
 				if (ativos.length === 0) {
