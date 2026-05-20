@@ -67,20 +67,23 @@ export function createListarAgendamentos(deps: {
 				};
 			}
 
-			// 3. Format for agent
+			// 3. Format for agent.
+			// Trinks retorna datetime naive (sem TZ) que representa BRT local.
+			// Se interpretássemos como UTC, 17:00 viraria 14:00 no display BRT.
+			// Solução: extrair hora/dia diretamente da string.
 			const formatted = agendamentos.map((a) => {
-				const dt = new Date(a.dataHoraInicio);
 				const DAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+				const m = a.dataHoraInicio.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+				const dataStr = m ? `${m[1]}-${m[2]}-${m[3]}` : a.dataHoraInicio.split('T')[0];
+				const horaStr = m ? `${m[4]}:${m[5]}` : '';
+				// Para dia da semana sem timezone bug: usar meio-dia BRT
+				const dtMeioDia = new Date(`${dataStr}T12:00:00-03:00`);
 				return {
 					id: a.id,
 					servico: a.servico.nome,
-					data: a.dataHoraInicio.split('T')[0],
-					hora: dt.toLocaleTimeString('pt-BR', {
-						hour: '2-digit',
-						minute: '2-digit',
-						timeZone: 'America/Bahia',
-					}),
-					dia_semana: DAYS[dt.getDay()] ?? '',
+					data: dataStr,
+					hora: horaStr,
+					dia_semana: DAYS[dtMeioDia.getDay()] ?? '',
 					profissional: a.profissional.nome,
 					valor: a.valor ?? 0,
 					status: STATUS_NAMES[a.status.id] ?? `Status ${a.status.id}`,

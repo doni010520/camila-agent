@@ -160,7 +160,7 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 				{
 					tool: tc.function.name,
 					status: toolResult.status,
-					args: tc.function.arguments?.slice(0, 300),
+					args: JSON.stringify(parsed.data).slice(0, 300),
 					result: resultStr.slice(0, 600),
 				},
 				'Tool executed',
