@@ -155,6 +155,23 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			}
 			return c.json({ status: 'ok', command: 'reset' });
 		}
+		if (cmd === '#vip-on' || cmd === '#vip-off') {
+			const isVip = cmd === '#vip-on';
+			try {
+				const tags = await leadManager.setVip(telefone, isVip);
+				await deps.uazapi.sendText(
+					telefone,
+					isVip ? `⭐ VIP ativado. Etiquetas: ${tags.join(', ')}` : `🔓 VIP removido. Etiquetas: ${tags.join(', ') || '(vazio)'}`,
+				);
+				log.info({ isVip, tags }, 'VIP toggled via command');
+			} catch (err) {
+				log.error({ err }, 'VIP toggle failed');
+				await deps.uazapi
+					.sendText(telefone, '❌ Falha ao alternar VIP.')
+					.catch(() => undefined);
+			}
+			return c.json({ status: 'ok', command: cmd });
+		}
 		if (cmd === '#ia-on' || cmd === '#ia-off') {
 			const active = cmd === '#ia-on';
 			try {

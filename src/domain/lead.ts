@@ -98,6 +98,17 @@ export class LeadManager {
 		if (error) throw new Error(`Lead update: ${error.message}`);
 	}
 
+	async setVip(telefone: string, isVip: boolean): Promise<string[]> {
+		const lead = await this.getLead(telefone);
+		if (!lead) throw new Error('Lead não encontrado');
+		const current = lead.etiquetas ?? [];
+		const filtered = current.filter((e) => !e.toLowerCase().includes('vip'));
+		const next = isVip ? [...filtered, 'vip'] : filtered;
+		await this.updateLead(telefone, { etiquetas: next });
+		this.log.info({ telefone: telefone.slice(-8), vip: isVip }, 'VIP status changed');
+		return next;
+	}
+
 	async setIaAtiva(telefone: string, active: boolean): Promise<void> {
 		// ia_on_off is TEXT 'on'/'off' (legacy n8n format), not boolean
 		await this.updateLead(telefone, { ia_on_off: active ? 'on' : 'off' });
