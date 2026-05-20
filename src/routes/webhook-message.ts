@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { rootLogger } from '../infra/logger.js';
 import { runAgent } from '../agent/helena.js';
 import type { ToolRegistry } from '../agent/tools/_registry.js';
 import type { AppOpenAIClient } from '../clients/openai.js';
@@ -66,22 +67,48 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 
 	router.post('/webhook/uazapi/message', async (c) => {
 		const rawBody: unknown = await c.req.json();
-		const parsed = uazapiWebhookSchema.safeParse(rawBody);
+
+		// UAZAPI manda payload SEM o wrapper `body:` no formato real.
+		// Formato real: {BaseUrl, EventType, chat, message, owner, token}
+		// Formato esperado pelo schema antigo (compat): {body: {chat, message}}
+		// Normalizamos ambos pra um shape único antes de validar.
+		const rawObj = (rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : {});
+		const innerBody = (rawObj.body && typeof rawObj.body === 'object' ? rawObj.body : rawObj) as Record<
+			string,
+			unknown
+		>;
+		// messageType vem `"Conversation"` em vez de `"conversation"` — minuscula 1ª letra
+		const msgObj = (innerBody.message && typeof innerBody.message === 'object'
+			? (innerBody.message as Record<string, unknown>)
+			: {}) as Record<string, unknown>;
+		if (typeof msgObj.messageType === 'string' && msgObj.messageType.length > 0) {
+			msgObj.messageType = msgObj.messageType.charAt(0).toLowerCase() + msgObj.messageType.slice(1);
+		}
+		// UAZAPI manda `content` como string OU objeto. Schema atual aceita só objeto.
+		// Se vier string, descartamos pra não quebrar — texto já está em `text`.
+		if (typeof msgObj.content === 'string') {
+			delete msgObj.content;
+		}
+		const normalized = { body: { chat: innerBody.chat, message: msgObj, token: innerBody.token } };
+
+		const parsed = uazapiWebhookSchema.safeParse(normalized);
 
 		// Log persistente de TODA inbound — antes de validar/filtrar/ignorar.
 		// Permite responder "será que a mensagem chegou?" mesmo após restart.
 		// Best-effort: nunca quebra o fluxo.
 		try {
-			const raw = (rawBody as { body?: { message?: Record<string, unknown> } })?.body?.message ?? {};
-			const chatid = typeof raw.chatid === 'string' ? raw.chatid : null;
+			const chatid = typeof msgObj.chatid === 'string' ? (msgObj.chatid as string) : null;
 			deps.postgres.logWebhookInbound({
 				chatid,
 				telefone: chatid ? chatid.split('@')[0] ?? null : null,
-				message_type: typeof raw.messageType === 'string' ? raw.messageType : null,
-				text: typeof raw.text === 'string' ? raw.text : null,
-				from_me: raw.fromMe === true,
-				was_sent_by_api: raw.wasSentByApi === true,
-				button_id: typeof raw.buttonOrListid === 'string' && raw.buttonOrListid !== '' ? raw.buttonOrListid : null,
+				message_type: typeof msgObj.messageType === 'string' ? (msgObj.messageType as string) : null,
+				text: typeof msgObj.text === 'string' ? (msgObj.text as string) : null,
+				from_me: msgObj.fromMe === true,
+				was_sent_by_api: msgObj.wasSentByApi === true,
+				button_id:
+					typeof msgObj.buttonOrListid === 'string' && msgObj.buttonOrListid !== ''
+						? (msgObj.buttonOrListid as string)
+						: null,
 				payload: rawBody,
 			}).catch(() => undefined);
 		} catch {
@@ -89,6 +116,10 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		}
 
 		if (!parsed.success) {
+			rootLogger.warn(
+				{ issues: parsed.error.flatten() },
+				'Webhook payload rejected by schema',
+			);
 			return c.json({ status: 'erro', razao: 'Payload inválido' }, 400);
 		}
 
