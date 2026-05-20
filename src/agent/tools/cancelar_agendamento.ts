@@ -53,8 +53,16 @@ export function createCancelarAgendamento(deps: {
 			}
 
 			if (input.agendamento_id !== undefined) {
-				const exists = ativos.some((a) => a.id === input.agendamento_id);
-				if (exists) return await cancelAndVerify(input.agendamento_id, input.motivo);
+				// IDs Trinks são grandes (>=1000). Se o LLM passar 1..N (índice 1-based)
+				// resolvemos pra ID real da lista. Mitiga alucinação onde Helena envia
+				// o número da posição em vez do ID real.
+				let alvoId: number | undefined;
+				if (input.agendamento_id >= 1 && input.agendamento_id <= ativos.length) {
+					alvoId = ativos[input.agendamento_id - 1]?.id;
+				} else if (ativos.some((a) => a.id === input.agendamento_id)) {
+					alvoId = input.agendamento_id;
+				}
+				if (alvoId !== undefined) return await cancelAndVerify(alvoId, input.motivo);
 				// ID inválido/alucinado: re-lista pra Helena escolher de novo
 			}
 

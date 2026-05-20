@@ -60,7 +60,11 @@ export function createReagendarAgendamento(deps: {
 
 			let agIdAntigo: number | undefined;
 			if (input.agendamento_id !== undefined) {
-				if (ativos.some((a) => a.id === input.agendamento_id)) {
+				// IDs Trinks são grandes (>=1000). Se o LLM passar 1..N (índice 1-based),
+				// resolvemos pra ID real da lista. Mitiga alucinação.
+				if (input.agendamento_id >= 1 && input.agendamento_id <= ativos.length) {
+					agIdAntigo = ativos[input.agendamento_id - 1]?.id;
+				} else if (ativos.some((a) => a.id === input.agendamento_id)) {
 					agIdAntigo = input.agendamento_id;
 				}
 				// senão: cai pro fluxo de escolha abaixo
