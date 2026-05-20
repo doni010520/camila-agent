@@ -75,6 +75,23 @@ export class PostgresClient {
 			);
 			CREATE INDEX IF NOT EXISTS idx_chat_histories_session
 				ON n8n_chat_histories(session_id, id DESC);
+
+			CREATE TABLE IF NOT EXISTS webhook_inbound (
+				id BIGSERIAL PRIMARY KEY,
+				recebido_em TIMESTAMPTZ DEFAULT NOW(),
+				chatid TEXT,
+				telefone TEXT,
+				message_type TEXT,
+				text TEXT,
+				from_me BOOLEAN,
+				was_sent_by_api BOOLEAN,
+				button_id TEXT,
+				payload TEXT
+			);
+			CREATE INDEX IF NOT EXISTS idx_webhook_inbound_recebido_em
+				ON webhook_inbound(recebido_em DESC);
+			CREATE INDEX IF NOT EXISTS idx_webhook_inbound_telefone
+				ON webhook_inbound(telefone, recebido_em DESC);
 		`);
 	}
 
@@ -147,6 +164,73 @@ export class PostgresClient {
 			 WHERE tipo = 'human'
 			 ORDER BY ultima_id DESC
 			 LIMIT 50`,
+		);
+	}
+
+	/** Best-effort: registra TODA mensagem inbound do webhook UAZAPI pra
+	 *  auditoria. Não bloqueia o fluxo principal. */
+	async logWebhookInbound(input: {
+		chatid: string | null;
+		telefone: string | null;
+		message_type: string | null;
+		text: string | null;
+		from_me: boolean;
+		was_sent_by_api: boolean;
+		button_id: string | null;
+		payload: unknown;
+	}): Promise<void> {
+		try {
+			await this.pool.query(
+				`INSERT INTO webhook_inbound
+				   (chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id, payload)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				[
+					input.chatid,
+					input.telefone,
+					input.message_type,
+					input.text?.slice(0, 2000) ?? null,
+					input.from_me,
+					input.was_sent_by_api,
+					input.button_id,
+					JSON.stringify(input.payload).slice(0, 8000),
+				],
+			);
+		} catch (err) {
+			rootLogger.warn(
+				{ err: err instanceof Error ? err.message : 'unknown' },
+				'logWebhookInbound failed',
+			);
+		}
+	}
+
+	async listWebhookInbound(opts: { telefone?: string; limit?: number }): Promise<
+		Array<{
+			id: number;
+			recebido_em: string;
+			chatid: string | null;
+			telefone: string | null;
+			message_type: string | null;
+			text: string | null;
+			from_me: boolean;
+			was_sent_by_api: boolean;
+			button_id: string | null;
+		}>
+	> {
+		const limit = opts.limit ?? 50;
+		if (opts.telefone) {
+			return this.query(
+				`SELECT id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id
+				 FROM webhook_inbound
+				 WHERE telefone = $1 OR chatid LIKE $2
+				 ORDER BY id DESC LIMIT $3`,
+				[opts.telefone, `${opts.telefone}@%`, limit],
+			);
+		}
+		return this.query(
+			`SELECT id, recebido_em, chatid, telefone, message_type, text, from_me, was_sent_by_api, button_id
+			 FROM webhook_inbound
+			 ORDER BY id DESC LIMIT $1`,
+			[limit],
 		);
 	}
 

@@ -30,6 +30,24 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		return c.json({ total_sessions: sessions.length, sessions });
 	});
 
+	/** Últimas mensagens inbound recebidas no webhook UAZAPI. */
+	router.get('/admin/inbound', async (c) => {
+		const limit = Number(c.req.query('n') ?? 50);
+		const rows = await deps.postgres.listWebhookInbound({ limit: Number.isFinite(limit) ? limit : 50 });
+		return c.json({ total: rows.length, mensagens: rows });
+	});
+
+	/** Mensagens inbound de um telefone específico. */
+	router.get('/admin/inbound/telefone/:telefone', async (c) => {
+		const telefone = c.req.param('telefone');
+		const limit = Number(c.req.query('n') ?? 50);
+		const rows = await deps.postgres.listWebhookInbound({
+			telefone,
+			limit: Number.isFinite(limit) ? limit : 50,
+		});
+		return c.json({ telefone, total: rows.length, mensagens: rows });
+	});
+
 	/** Sessões com última mensagem do usuário sem resposta da Helena. */
 	router.get('/admin/sem-resposta', async (c) => {
 		const sessions = await deps.postgres.listSessionsSemResposta();

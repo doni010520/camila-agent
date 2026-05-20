@@ -68,6 +68,26 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		const rawBody: unknown = await c.req.json();
 		const parsed = uazapiWebhookSchema.safeParse(rawBody);
 
+		// Log persistente de TODA inbound — antes de validar/filtrar/ignorar.
+		// Permite responder "será que a mensagem chegou?" mesmo após restart.
+		// Best-effort: nunca quebra o fluxo.
+		try {
+			const raw = (rawBody as { body?: { message?: Record<string, unknown> } })?.body?.message ?? {};
+			const chatid = typeof raw.chatid === 'string' ? raw.chatid : null;
+			deps.postgres.logWebhookInbound({
+				chatid,
+				telefone: chatid ? chatid.split('@')[0] ?? null : null,
+				message_type: typeof raw.messageType === 'string' ? raw.messageType : null,
+				text: typeof raw.text === 'string' ? raw.text : null,
+				from_me: raw.fromMe === true,
+				was_sent_by_api: raw.wasSentByApi === true,
+				button_id: typeof raw.buttonOrListid === 'string' && raw.buttonOrListid !== '' ? raw.buttonOrListid : null,
+				payload: rawBody,
+			}).catch(() => undefined);
+		} catch {
+			/* never blocks */
+		}
+
 		if (!parsed.success) {
 			return c.json({ status: 'erro', razao: 'Payload inválido' }, 400);
 		}
