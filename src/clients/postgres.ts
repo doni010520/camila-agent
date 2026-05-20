@@ -116,6 +116,14 @@ export class PostgresClient {
 		);
 	}
 
+	async clearChatMemory(sessionId: string): Promise<number> {
+		const result = await this.pool.query(
+			'DELETE FROM n8n_chat_histories WHERE session_id = $1',
+			[sessionId],
+		);
+		return result.rowCount ?? 0;
+	}
+
 	async loadRecentMessages(sessionId: string, limit = 30): Promise<ChatMemoryRow[]> {
 		const rows = await this.query<{ id: number; session_id: string; message: Record<string, unknown> }>(
 			`SELECT id, session_id, message

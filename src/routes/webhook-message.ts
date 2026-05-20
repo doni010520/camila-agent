@@ -136,6 +136,23 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			return c.json({ status: 'ok', ignored: 'empty_text' });
 		}
 
+		// Magic command: cliente envia "#reset" pra limpar histórico desta conversa.
+		// Útil pra debug / quando memória ficou poluída com respostas erradas.
+		// (Não documentado pro público — usado por nós internamente.)
+		if (text.trim().toLowerCase() === '#reset') {
+			try {
+				const deleted = await memory.clear(telefone);
+				await deps.uazapi.sendText(telefone, `🧹 Memória limpa (${deleted} mensagens).`);
+				log.info({ deleted }, 'Memory reset via #reset command');
+			} catch (err) {
+				log.error({ err }, '#reset failed');
+				await deps.uazapi
+					.sendText(telefone, '❌ Falha ao limpar memória.')
+					.catch(() => undefined);
+			}
+			return c.json({ status: 'ok', command: 'reset' });
+		}
+
 		// Push to debouncer (responds 200 immediately, agent runs after debounce window)
 		debouncer.push(telefone, text);
 		return c.json({ status: 'ok', debounced: true });

@@ -29,6 +29,12 @@ export class ChatMemory {
 		return messages;
 	}
 
+	async clear(sessionId: string): Promise<number> {
+		const deleted = await this.pg.clearChatMemory(sessionId);
+		this.log.info({ sessionId: sessionId.slice(-8), deleted }, 'Chat memory cleared');
+		return deleted;
+	}
+
 	async save(
 		sessionId: string,
 		role: string,
