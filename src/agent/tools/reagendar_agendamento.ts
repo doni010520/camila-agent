@@ -104,10 +104,15 @@ export function createReagendarAgendamento(deps: {
 
 				try {
 					await supabase.raw.from('logs_agendamentos').insert({
-						agendamento_id: agId,
-						acao: 'reagendamento',
-						motivo: `Para ${input.nova_data_hora}`,
-						created_at: new Date().toISOString(),
+						evento: 'reagendamento_agendamento',
+						agendamento_id: String(agId),
+						cliente_id: lookup.cliente.id,
+						detalhes: {
+							data_anterior: current.dataHoraInicio,
+							data_nova: input.nova_data_hora,
+							reagendado_em: new Date().toISOString(),
+						},
+						criado_em: new Date().toISOString(),
 					});
 				} catch {
 					/* best-effort */

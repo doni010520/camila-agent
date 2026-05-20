@@ -107,8 +107,8 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			wa_label: chat?.wa_label,
 		});
 
-		// If IA disabled for this lead, ignore (uses legacy ia_on_off column)
-		if (lead.ia_on_off === false) {
+		// If IA disabled for this lead, ignore (ia_on_off is TEXT 'on'/'off', not boolean)
+		if (lead.ia_on_off === 'off') {
 			log.info('IA disabled for this lead, ignoring');
 			return c.json({ status: 'ok', ignored: 'ia_desativada' });
 		}

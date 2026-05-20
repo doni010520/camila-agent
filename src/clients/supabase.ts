@@ -58,7 +58,7 @@ export const leadCamilaRowSchema = z.object({
 	metadata: z.record(z.unknown()).default({}),
 
 	// Legacy columns from Levesol/n8n velho (kept for backward compat)
-	ia_on_off: z.boolean().nullable().optional(),
+	ia_on_off: z.string().nullable().optional(),  // 'on' | 'off' (text, NOT boolean!)
 	pdf_enviado_nesta_conversa: z.boolean().nullable().optional(),
 	status_funil_vendas: z.string().nullable().optional(),
 });

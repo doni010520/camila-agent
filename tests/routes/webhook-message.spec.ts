@@ -139,12 +139,12 @@ describe('POST /webhook/uazapi/message', () => {
 		expect(body.ignored).toBe('invalid_phone');
 	});
 
-	it('ia_on_off: false → 200 {ignored: "ia_desativada"}', async () => {
+	it('ia_on_off: "off" → 200 {ignored: "ia_desativada"}', async () => {
 		mockLeadManager.getOrCreate.mockResolvedValue({
 			id: 'uuid',
 			telefone: '5571999999999',
 			nome: 'Maria',
-			ia_on_off: false,
+			ia_on_off: 'off',
 			etiquetas: [],
 			sinal_pago: false,
 			pdf_catalogo_enviado_em: null,

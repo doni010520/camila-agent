@@ -68,12 +68,12 @@ export class LeadManager {
 			return updated as LeadCamilaRow;
 		}
 
-		// Create new lead — using ia_on_off (legacy column for backward compat with n8n)
+		// Create new lead — using ia_on_off (legacy column, TEXT 'on'/'off', not boolean)
 		const newLead = {
 			telefone: input.telefone,
 			nome: input.nome ?? null,
 			etiquetas: input.wa_label ? [input.wa_label] : [],
-			ia_on_off: true,
+			ia_on_off: 'on',
 			sinal_pago: false,
 			metadata: {},
 			ultimo_contato: now.toISOString(),
@@ -99,15 +99,15 @@ export class LeadManager {
 	}
 
 	async setIaAtiva(telefone: string, active: boolean): Promise<void> {
-		// Use ia_on_off (legacy column) so n8n velho also sees the flag
-		await this.updateLead(telefone, { ia_on_off: active });
+		// ia_on_off is TEXT 'on'/'off' (legacy n8n format), not boolean
+		await this.updateLead(telefone, { ia_on_off: active ? 'on' : 'off' });
 		this.log.info({ telefone: telefone.slice(-8), ia_ativa: active }, 'IA status changed');
 	}
 
 	/** Check if IA is active for this lead (reads ia_on_off legacy column) */
 	isIaAtiva(lead: LeadCamilaRow): boolean {
-		// Default to true if column is null (new lead or legacy without flag)
-		return lead.ia_on_off !== false;
+		// 'on' or null → ativa; only 'off' disables
+		return lead.ia_on_off !== 'off';
 	}
 
 	async markSinalPago(telefone: string): Promise<void> {

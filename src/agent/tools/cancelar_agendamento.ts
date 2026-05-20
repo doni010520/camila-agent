@@ -34,6 +34,7 @@ export function createCancelarAgendamento(deps: {
 			// 1. Find cliente
 			const lookup = await findClienteByTelefone(input.telefone, { trinks, postgres });
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
+			const clienteId = lookup.cliente.id;
 
 			// 2. If no agendamento_id, list active ones
 			if (input.agendamento_id === undefined) {
@@ -94,13 +95,14 @@ export function createCancelarAgendamento(deps: {
 						/* best-effort */
 					}
 
-					// Log (best-effort)
+					// Log (best-effort) — real columns: evento, detalhes, criado_em
 					try {
 						await supabase.raw.from('logs_agendamentos').insert({
-							agendamento_id: agId,
-							acao: 'cancelamento',
-							motivo,
-							created_at: new Date().toISOString(),
+							evento: 'cancelamento_agendamento',
+							agendamento_id: String(agId),
+							cliente_id: clienteId,
+							detalhes: { motivo, cancelado_em: new Date().toISOString() },
+							criado_em: new Date().toISOString(),
 						});
 					} catch {
 						/* best-effort */
