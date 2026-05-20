@@ -46,7 +46,9 @@ export function createCancelarAgendamento(deps: {
 				dataInicio: `${hoje}T00:00:00`,
 				dataFim: '2027-12-31T23:59:59',
 			});
-			const ativos = result.data.filter((a) => ACTIVE_STATUSES.has(a.status.id));
+			const ativos = result.data
+				.filter((a) => ACTIVE_STATUSES.has(a.status.id))
+				.sort((a, b) => a.dataHoraInicio.localeCompare(b.dataHoraInicio));
 
 			if (ativos.length === 0) {
 				return { status: 'ok', total: 0, mensagem: 'Nenhum agendamento ativo encontrado.' };
