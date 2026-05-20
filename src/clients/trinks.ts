@@ -390,9 +390,11 @@ export class TrinksClient {
 		return this.typedRequest('GET', `/v1/agendamentos/${id}`, trinksAgendamentoSchema);
 	}
 
-	async createAgendamento(input: TrinksCreateAgendamentoInput) {
+	async createAgendamento(input: TrinksCreateAgendamentoInput): Promise<{ id: number }> {
 		trinksCreateAgendamentoInputSchema.parse(input);
-		return this.typedRequest('POST', '/v1/agendamentos', trinksAgendamentoSchema, input);
+		// Trinks POST /agendamentos returns ONLY { id } — NOT the full agendamento.
+		// Use a minimal schema; fetch full details via getAgendamento if needed.
+		return this.typedRequest('POST', '/v1/agendamentos', z.object({ id: z.number() }), input);
 	}
 
 	async updateAgendamento(id: number, input: TrinksUpdateAgendamentoInput) {

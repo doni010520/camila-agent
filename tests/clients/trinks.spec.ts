@@ -103,23 +103,9 @@ const handlers = [
 	),
 	http.get(`${BASE}/v1/agendamentos/494524448`, () => HttpResponse.json(REAL_AGENDAMENTO)),
 	http.get(`${BASE}/v1/agendamentos/404`, () => new HttpResponse(null, { status: 404 })),
-	http.post(`${BASE}/v1/agendamentos`, async ({ request }) => {
-		const body = (await request.json()) as Record<string, unknown>;
-		return HttpResponse.json(
-			{
-				id: 500000001,
-				status: { id: 1, nome: 'Agendado' },
-				cliente: { id: body.clienteId, nome: 'Test' },
-				servico: { id: body.servicoId, nome: 'Volume Brasileiro' },
-				profissional: { id: body.profissionalId, nome: 'Camila Rosario' },
-				dataHoraInicio: body.dataHoraInicio,
-				duracaoEmMinutos: body.duracaoEmMinutos,
-				valor: body.valor ?? null,
-				observacoesDoEstabelecimento: null,
-				observacoesDoCliente: null,
-			},
-			{ status: 201 },
-		);
+	http.post(`${BASE}/v1/agendamentos`, async () => {
+		// Trinks really returns ONLY { id } on POST
+		return HttpResponse.json({ id: 500000001 }, { status: 201 });
 	}),
 	http.put(`${BASE}/v1/agendamentos/494524448`, async ({ request }) => {
 		const body = (await request.json()) as Record<string, unknown>;
@@ -243,7 +229,7 @@ describe('TrinksClient', () => {
 			);
 		});
 
-		it('createAgendamento with flat IDs (POST asymmetry)', async () => {
+		it('createAgendamento returns only { id } (Trinks POST returns minimal)', async () => {
 			const ag = await client.createAgendamento({
 				servicoId: 7331915,
 				clienteId: 74248732,
@@ -252,7 +238,8 @@ describe('TrinksClient', () => {
 				duracaoEmMinutos: 120,
 				valor: 160,
 			});
-			expect(ag.status.id).toBe(1); // response is nested
+			expect(typeof ag.id).toBe('number');
+			expect(ag.id).toBeGreaterThan(0);
 		});
 
 		it('verify-after-write: getAgendamento 404 throws', async () => {
