@@ -209,6 +209,8 @@ if(token)showDash();
 </body>
 </html>`;
 
+export { DASHBOARD_HTML };
+
 export interface AdminDeps {
 	postgres: PostgresClient;
 	supabase: AppSupabaseClient;
@@ -238,12 +240,7 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	const router = new Hono();
 	const env = getEnv();
 
-	/** Dashboard HTML — sem auth no HTTP, JS cuida via localStorage */
-	router.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML));
-
 	router.use('/admin/*', async (c, next) => {
-		// Dashboard é HTML público — autenticação fica no client-side
-		if (c.req.path === '/admin/dashboard') return next();
 		if (env.WEBHOOK_SHARED_SECRET) {
 			const auth = c.req.header('Authorization');
 			if (auth !== `Bearer ${env.WEBHOOK_SHARED_SECRET}`) {
