@@ -111,6 +111,88 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		}
 	});
 
+	/**
+	 * Detalhamento por métrica — usado pelo drill-down do dashboard cliente.
+	 * tipo: conversas | agendamentos | sinais | catalogos | encaminhados
+	 */
+	router.get('/admin/eventos', async (c) => {
+		const tipo = c.req.query('tipo') ?? 'agendamentos';
+		const periodo = c.req.query('periodo') ?? 'dia';
+
+		const tipoMap: Record<string, string> = {
+			conversas: 'mensagem_recebida',
+			agendamentos: 'agendamento_criado',
+			sinais: 'sinal_pago',
+			catalogos: 'catalogo_enviado',
+			encaminhados: 'transferido_humano',
+		};
+		const tipoEvento = tipoMap[tipo];
+		if (!tipoEvento) return c.json({ status: 'erro', razao: 'tipo inválido' }, 400);
+
+		const { inicio, fim } = calcRange(periodo, undefined);
+		const { data, error } = await deps.supabase.raw
+			.from('eventos_helena')
+			.select('cliente_nome, criado_em, valor, detalhes, telefone')
+			.eq('tipo', tipoEvento)
+			.eq('sucesso', true)
+			.gte('criado_em', inicio)
+			.lte('criado_em', fim)
+			.order('criado_em', { ascending: false });
+
+		if (error) return c.json({ status: 'erro', razao: error.message }, 500);
+
+		type EventRow = {
+			cliente_nome: string | null;
+			criado_em: string;
+			valor: number | null;
+			detalhes: Record<string, unknown> | null;
+			telefone: string | null;
+		};
+		let rows = (data ?? []) as EventRow[];
+
+		// Conversas: deduplicar por telefone (1 entrada por cliente único)
+		if (tipo === 'conversas') {
+			const seen = new Set<string>();
+			rows = rows.filter((r) => {
+				const key = r.telefone ?? r.cliente_nome ?? String(Math.random());
+				if (seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			});
+		}
+
+		const itens = rows.map((r) => {
+			const det = (r.detalhes ?? {}) as Record<string, unknown>;
+			const res = (det.result ?? {}) as Record<string, unknown>;
+			const hora = new Date(r.criado_em).toLocaleTimeString('pt-BR', {
+				hour: '2-digit',
+				minute: '2-digit',
+				timeZone: 'America/Bahia',
+			});
+
+			let detalhe = '';
+			if (tipo === 'agendamentos') {
+				const servico = typeof res.servico_nome === 'string' ? res.servico_nome : '';
+				const val = r.valor ? ` · R$ ${Number(r.valor).toFixed(2).replace('.', ',')}` : '';
+				const dhStr = typeof res.data_hora_inicio === 'string' ? res.data_hora_inicio : '';
+				const horario = dhStr
+					? new Date(dhStr).toLocaleTimeString('pt-BR', {
+							hour: '2-digit',
+							minute: '2-digit',
+							timeZone: 'America/Bahia',
+						})
+					: '';
+				detalhe = servico + val + (horario ? ` · ${horario}` : '');
+			} else if (tipo === 'sinais' && r.valor) {
+				detalhe = `R$ ${Number(r.valor).toFixed(2).replace('.', ',')}`;
+			}
+
+			return { nome: r.cliente_nome ?? 'Cliente', hora, detalhe };
+		});
+
+		return c.json({ tipo, periodo, total: itens.length, itens });
+	});
+
 	/** Lista de erros — SEPARADO. Cliente NUNCA vê esse endpoint. */
 	router.get('/admin/erros', async (c) => {
 		const n = Number(c.req.query('n') ?? 50);

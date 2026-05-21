@@ -75,6 +75,23 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
 .kc-val{font-size:2.3rem;font-weight:700;color:var(--ink);line-height:1;letter-spacing:-.01em}
 .kc-val.gold{color:var(--dk)}
 .kc-sub{font-size:.68rem;color:var(--acc);margin-top:6px;letter-spacing:.08em}
+.kc.clickable{cursor:pointer}
+.kc.active{background:var(--lt);border-bottom:2px solid var(--acc)}
+.kc-hint{font-size:.55rem;letter-spacing:.22em;text-transform:uppercase;color:var(--bdr);margin-top:10px;transition:color .2s}
+.kc.clickable:hover .kc-hint{color:var(--acc)}
+.kc.active .kc-hint{color:var(--acc)}
+
+/* ── Drill-down panel ── */
+.dpanel{background:var(--wh);border:1px solid var(--bdr);border-top:2px solid var(--acc);display:none;margin-bottom:1px;animation:fadeUp .25s ease forwards}
+.dp-hdr{display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid var(--bdr)}
+.dp-ttl{font-size:.58rem;letter-spacing:.32em;text-transform:uppercase;color:var(--acc)}
+.dp-cls{background:none;border:none;font-family:'Josefin Sans',sans-serif;font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--mut);cursor:pointer;padding:4px 0}
+.dp-cls:hover{color:var(--dk)}
+.dp-item{display:flex;align-items:center;justify-content:space-between;padding:13px 22px;border-bottom:1px solid var(--bdr);font-size:.85rem}
+.dp-item:last-child{border-bottom:none}
+.dp-nome{font-weight:400;color:var(--ink)}
+.dp-info{font-size:.72rem;color:var(--mut);text-align:right;line-height:1.5}
+.dp-empty,.dp-loading{text-align:center;padding:28px;font-size:.65rem;letter-spacing:.25em;text-transform:uppercase;color:var(--mut)}
 
 /* ── Serviços ── */
 .slist{background:var(--wh);border:1px solid var(--bdr);border-top:none;padding:0 24px}
@@ -136,6 +153,7 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
 <script>
 var cliTok = localStorage.getItem('helena_cli_token') || '';
 var cliPer = 'dia';
+var drillOpen = '';
 
 function brl(n){ return 'R$ ' + Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmt(n){ return Number(n||0).toLocaleString('pt-BR'); }
@@ -212,13 +230,14 @@ function render(r){
   h += '</div>';
 
   h += '<div class="grid fa fa-d2">';
-  h += mkKC('conv', 'Conversas atendidas', fmt(r.atendimentos_unicos), '', '', r.atendimentos_unicos, false);
-  h += mkKC('ag', 'Agendamentos feitos', fmt(r.agendamentos_criados), '', '', r.agendamentos_criados, false);
-  h += mkKC('rec', 'Receita gerada', brl(r.receita_potencial_agendada), '', 'gold', r.receita_potencial_agendada, true);
-  h += mkKC('sin', 'Sinais recebidos', fmt(r.sinais_pagos), brl(r.receita_sinais), '', r.sinais_pagos, false);
-  h += mkKC('cat', 'Catálogos enviados', fmt(r.catalogos_enviados), 'novos contatos', '', r.catalogos_enviados, false);
-  h += mkKC('enc', 'Encaminhados pra você', fmt(r.transferidos_humano), 'atenção especial', '', r.transferidos_humano, false);
+  h += mkKC('conv', 'Conversas atendidas', fmt(r.atendimentos_unicos), '', '', r.atendimentos_unicos, false, 'conversas');
+  h += mkKC('ag', 'Agendamentos feitos', fmt(r.agendamentos_criados), '', '', r.agendamentos_criados, false, 'agendamentos');
+  h += mkKC('rec', 'Receita gerada', brl(r.receita_potencial_agendada), '', 'gold', r.receita_potencial_agendada, true, 'agendamentos');
+  h += mkKC('sin', 'Sinais recebidos', fmt(r.sinais_pagos), brl(r.receita_sinais), '', r.sinais_pagos, false, 'sinais');
+  h += mkKC('cat', 'Catálogos enviados', fmt(r.catalogos_enviados), 'novos contatos', '', r.catalogos_enviados, false, 'catalogos');
+  h += mkKC('enc', 'Encaminhados pra você', fmt(r.transferidos_humano), 'atenção especial', '', r.transferidos_humano, false, 'encaminhados');
   h += '</div>';
+  h += '<div id="dpanel" class="dpanel"></div>';
 
   if(ts.length > 0){
     h += '<div class="slist fa fa-d3">';
@@ -250,14 +269,74 @@ function render(r){
   animCount('enc', r.transferidos_humano || 0, false);
 }
 
-function mkKC(id, lbl, val, sub, cls, raw, isFloat){
-  return '<div class="kc"><div class="kc-lbl">' + esc(lbl) + '</div>' +
-    '<div class="kc-val ' + cls + '" id="' + id + '">' + esc(val) + '</div>' +
+function mkKC(id, lbl, val, sub, cls, raw, isFloat, tipo){
+  var clickCls = tipo ? ' clickable' : '';
+  var attrs = tipo ? (' onclick="drill(\'' + tipo + '\')" data-tipo="' + tipo + '"') : '';
+  return '<div class="kc' + clickCls + '"' + attrs + '>' +
+    '<div class="kc-lbl">' + esc(lbl) + '</div>' +
+    '<div class="kc-val ' + (cls||'') + '" id="' + id + '">' + esc(val) + '</div>' +
     (sub ? '<div class="kc-sub">' + esc(sub) + '</div>' : '') +
+    (tipo ? '<div class="kc-hint">ver detalhes ›</div>' : '') +
     '</div>';
 }
 
+var drillLabels = {
+  conversas: 'Conversas atendidas',
+  agendamentos: 'Agendamentos feitos',
+  sinais: 'Sinais recebidos',
+  catalogos: 'Cat\xE1logos enviados',
+  encaminhados: 'Encaminhados pra voc\xEA'
+};
+
+function drill(tipo){
+  if(drillOpen === tipo){ closeDrill(); return; }
+  drillOpen = tipo;
+  document.querySelectorAll('.kc.clickable').forEach(function(el){
+    el.classList.toggle('active', el.getAttribute('data-tipo') === tipo);
+  });
+  var panel = document.getElementById('dpanel');
+  if(!panel) return;
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="dp-hdr"><span class="dp-ttl">' + esc(drillLabels[tipo]||tipo) + '</span><button class="dp-cls" onclick="closeDrill()">Fechar \xD7</button></div><div class="dp-loading">carregando…</div>';
+  apiFetch('/admin/eventos?tipo=' + tipo + '&periodo=' + cliPer)
+    .then(function(d){ renderDrill(tipo, d.itens || []); })
+    .catch(function(){
+      var p2 = document.getElementById('dpanel');
+      if(p2) p2.innerHTML = '<div class="dp-hdr"><span class="dp-ttl">' + esc(drillLabels[tipo]||tipo) + '</span><button class="dp-cls" onclick="closeDrill()">Fechar \xD7</button></div><div class="dp-empty">N\xE3o foi poss\xEDvel carregar</div>';
+    });
+}
+
+function closeDrill(){
+  drillOpen = '';
+  document.querySelectorAll('.kc.clickable').forEach(function(el){ el.classList.remove('active'); });
+  var panel = document.getElementById('dpanel');
+  if(panel){ panel.style.display = 'none'; panel.innerHTML = ''; }
+}
+
+function renderDrill(tipo, itens){
+  var panel = document.getElementById('dpanel');
+  if(!panel) return;
+  var lbl = drillLabels[tipo] || tipo;
+  var h = '<div class="dp-hdr"><span class="dp-ttl">' + esc(lbl) + ' \xB7 ' + itens.length + '</span><button class="dp-cls" onclick="closeDrill()">Fechar \xD7</button></div>';
+  if(itens.length === 0){
+    h += '<div class="dp-empty">Nenhum registro nesse per\xEDodo</div>';
+  } else {
+    for(var i = 0; i < itens.length; i++){
+      var it = itens[i];
+      h += '<div class="dp-item">';
+      h += '<span class="dp-nome">' + esc(it.nome || 'Cliente') + '</span>';
+      h += '<span class="dp-info">';
+      if(it.detalhe) h += esc(it.detalhe) + '<br>';
+      h += esc(it.hora || '');
+      h += '</span>';
+      h += '</div>';
+    }
+  }
+  panel.innerHTML = h;
+}
+
 function loadData(){
+  closeDrill();
   document.getElementById('ct').innerHTML = '<div class="loading">Carregando...</div>';
   apiFetch('/admin/relatorio?periodo=' + cliPer)
     .then(function(d){ render(d.resumo || d); })
