@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../src/agent/tools/_registry.js';
 import { createCriarAgendamento } from '../../src/agent/tools/criar_agendamento.js';
+import { _resetAgendamentoCache } from '../../src/infra/agendamento-cache.js';
 import { setTestEnv } from '../../src/infra/env.js';
 
 setTestEnv({});
@@ -82,6 +83,8 @@ function makeDeps(overrides?: {
 }
 
 describe('criar_agendamento', () => {
+	beforeEach(() => _resetAgendamentoCache());
+
 	it('✅ happy path: creates and verifies', async () => {
 		const { tool } = makeDeps();
 		const result = await tool.handler(

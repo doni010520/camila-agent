@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
+import { rememberAgendamento } from '../../infra/agendamento-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -177,6 +178,7 @@ export function createReagendarAgendamento(deps: {
 					confirmado: false,
 				});
 				agIdNovo = created.id;
+				rememberAgendamento(input.telefone, input.nova_data_hora, agIdNovo);
 			} catch (err) {
 				return {
 					status: 'erro',

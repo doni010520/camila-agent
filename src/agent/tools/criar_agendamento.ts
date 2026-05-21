@@ -5,6 +5,10 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { parsePhone } from '../../domain/telefone.js';
 import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
+import {
+	getCachedAgendamento,
+	rememberAgendamento,
+} from '../../infra/agendamento-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -54,6 +58,33 @@ export function createCriarAgendamento(deps: {
 				});
 				clienteId = created.id;
 				clienteNovo = true;
+			}
+
+			// 3a-PRE. Cache local in-process — mais rápido e imune a eventual consistency
+			// do Trinks. Cobre o caso real: Helena criou agendamento, cliente respondeu
+			// algo ambíguo 5min depois, Helena re-chamou criar_agendamento e o Trinks
+			// ainda não tinha indexado o primeiro POST -> duplicata.
+			const cachedId = getCachedAgendamento(input.telefone, input.data_e_hora);
+			if (cachedId !== null) {
+				try {
+					const ag = await trinks.getAgendamento(cachedId);
+					if (ACTIVE_STATUSES.has(ag.status.id)) {
+						return {
+							status: 'ok',
+							agendamento_id: ag.id,
+							cliente_id: ag.cliente.id,
+							cliente_nome: ag.cliente.nome,
+							servico_nome: ag.servico.nome,
+							data_hora_inicio: ag.dataHoraInicio,
+							duracao_em_minutos: ag.duracaoEmMinutos ?? 0,
+							valor: ag.valor ?? 0,
+							cliente_novo: false,
+							ja_existia: true,
+						};
+					}
+				} catch {
+					/* cache stale (foi cancelado, etc.) — segue pro fluxo normal */
+				}
 			}
 
 			// 3a. IDEMPOTENCY: check if cliente already has an active agendamento at this time
@@ -136,6 +167,9 @@ export function createCriarAgendamento(deps: {
 					confirmado: false,
 				});
 				agendamentoId = created.id;
+				// Memoriza imediatamente — mesmo antes de verify — pra não duplicar se
+				// o agent re-chamar entre POST e GET verify.
+				rememberAgendamento(input.telefone, input.data_e_hora, agendamentoId);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : 'Erro desconhecido';
 				return { status: 'erro', razao: `Falha ao criar agendamento: ${msg}` };
