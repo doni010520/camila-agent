@@ -9,7 +9,10 @@
 import { Hono } from 'hono';
 import type { PostgresClient } from '../clients/postgres.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
+import type { TrinksClient } from '../clients/trinks.js';
+import { findClienteByTelefone } from '../domain/cliente-lookup.js';
 import { todayBRT } from '../domain/data-brt.js';
+import { ACTIVE_STATUSES } from '../domain/trinks-status.js';
 import { agregarEventos } from '../jobs/relatorio-diario.js';
 
 // Re-exporta os HTMLs para uso no composition-root
@@ -18,6 +21,7 @@ export { DASHBOARD_HTML, CLIENTE_HTML } from './dashboard-html.js';
 export interface AdminDeps {
 	postgres: PostgresClient;
 	supabase: AppSupabaseClient;
+	trinks: TrinksClient;
 }
 
 function calcRange(periodo: string, dataParam: string | undefined): { inicio: string; fim: string } {
@@ -179,6 +183,77 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		});
 
 		return c.json({ tipo, periodo, total: itens.length, itens });
+	});
+
+	/**
+	 * Lista agendamentos da Trinks (source of truth) de um cliente por telefone
+	 * num dia específico. Útil pra diagnosticar duplicatas, conferir status reais.
+	 *   GET /admin/trinks/agendamentos?telefone=55XX&data=2026-05-26
+	 */
+	router.get('/admin/trinks/agendamentos', async (c) => {
+		const telefone = c.req.query('telefone');
+		const data = c.req.query('data');
+		if (!telefone || !data) return c.json({ status: 'erro', razao: 'telefone+data obrigatórios' }, 400);
+
+		const lookup = await findClienteByTelefone(telefone, {
+			trinks: deps.trinks,
+			postgres: deps.postgres,
+		});
+		if (!lookup) return c.json({ status: 'erro', razao: 'cliente não encontrado' }, 404);
+
+		const result = await deps.trinks.listAgendamentos({
+			clienteId: lookup.cliente.id,
+			dataInicio: `${data}T00:00:00`,
+			dataFim: `${data}T23:59:59`,
+		});
+
+		const agendamentos = (result.data ?? []).map((a) => ({
+			id: a.id,
+			status_id: a.status.id,
+			status_nome: a.status.nome,
+			ativo: ACTIVE_STATUSES.has(a.status.id),
+			servico: a.servico.nome,
+			data_hora_inicio: a.dataHoraInicio,
+			duracao_em_minutos: a.duracaoEmMinutos,
+			valor: a.valor,
+			profissional: a.profissional.nome,
+		}));
+
+		return c.json({
+			cliente: { id: lookup.cliente.id, nome: lookup.cliente.nome },
+			data,
+			total: agendamentos.length,
+			agendamentos,
+		});
+	});
+
+	/**
+	 * Cancela um agendamento direto via Trinks API. Usar quando duplicata ou
+	 * cliente pediu fora da janela normal.
+	 *   POST /admin/trinks/cancelar/:id?motivo=...
+	 */
+	router.post('/admin/trinks/cancelar/:id', async (c) => {
+		const id = Number(c.req.param('id'));
+		const motivo = c.req.query('motivo') ?? 'Cancelamento administrativo';
+		if (!Number.isFinite(id) || id <= 0) {
+			return c.json({ status: 'erro', razao: 'id inválido' }, 400);
+		}
+		try {
+			await deps.trinks.cancelarAgendamento(id, { motivo });
+			const readBack = await deps.trinks.getAgendamento(id);
+			return c.json({
+				status: 'ok',
+				id,
+				motivo,
+				status_atual_id: readBack.status.id,
+				status_atual_nome: readBack.status.nome,
+			});
+		} catch (err) {
+			return c.json(
+				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
+				500,
+			);
+		}
 	});
 
 	/** Lista de erros — SEPARADO. Cliente NUNCA vê esse endpoint. */
