@@ -45,6 +45,9 @@ const envSchema = z.object({
 	WEBHOOK_SHARED_SECRET: z.string().optional(),
 	DEBOUNCE_MS: z.coerce.number().default(8000),
 	AGENT_MAX_TURNS: z.coerce.number().default(6),
+
+	// Dev notifications (optional — relatório de erros privado)
+	UAZAPI_DEV_PHONE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -4,10 +4,34 @@
  */
 import { Hono } from 'hono';
 import type { PostgresClient } from '../clients/postgres.js';
+import type { AppSupabaseClient } from '../clients/supabase.js';
+import { todayBRT } from '../domain/data-brt.js';
+import { agregarEventos } from '../jobs/relatorio-diario.js';
 import { getEnv } from '../infra/env.js';
 
 export interface AdminDeps {
 	postgres: PostgresClient;
+	supabase: AppSupabaseClient;
+}
+
+function calcRange(periodo: string, dataParam: string | undefined): { inicio: string; fim: string } {
+	const hoje = dataParam ?? todayBRT();
+	if (periodo === 'semana') {
+		const d = new Date(`${hoje}T12:00:00-03:00`);
+		d.setDate(d.getDate() - 6);
+		const inicio7dias = d.toLocaleDateString('sv-SE', { timeZone: 'America/Bahia' });
+		return { inicio: `${inicio7dias}T00:00:00-03:00`, fim: `${hoje}T23:59:59-03:00` };
+	}
+	if (periodo === 'mes') {
+		const [year, month] = hoje.split('-');
+		const lastDay = new Date(Number(year), Number(month), 0).getDate();
+		return {
+			inicio: `${year}-${month}-01T00:00:00-03:00`,
+			fim: `${year}-${month}-${String(lastDay).padStart(2, '0')}T23:59:59-03:00`,
+		};
+	}
+	// dia (default)
+	return { inicio: `${hoje}T00:00:00-03:00`, fim: `${hoje}T23:59:59-03:00` };
 }
 
 export function createAdminRouter(deps: AdminDeps): Hono {
@@ -64,6 +88,36 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		const limit = Number(c.req.query('n') ?? 10);
 		const rows = await deps.postgres.loadRecentMessages(telefone, Number.isFinite(limit) ? limit : 10);
 		return c.json({ telefone, total: rows.length, mensagens: rows });
+	});
+
+	/** Relatório agregado — período = 'dia' | 'semana' | 'mes'. Cliente nunca acessa. */
+	router.get('/admin/relatorio', async (c) => {
+		const periodo = c.req.query('periodo') ?? 'dia';
+		const dataParam = c.req.query('data');
+		try {
+			const { inicio, fim } = calcRange(periodo, dataParam);
+			const data = dataParam ?? todayBRT();
+			const resumo = await agregarEventos(deps.supabase, inicio, fim);
+			return c.json({ periodo, data, resumo });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/** Lista de erros — SEPARADO. Cliente NUNCA vê esse endpoint. */
+	router.get('/admin/erros', async (c) => {
+		const n = Number(c.req.query('n') ?? 50);
+		const limit = Number.isFinite(n) && n > 0 ? n : 50;
+		const { data, error } = await deps.supabase.raw
+			.from('eventos_helena')
+			.select('criado_em, telefone, tipo, detalhes, cliente_nome')
+			.eq('sucesso', false)
+			.order('criado_em', { ascending: false })
+			.limit(limit);
+		if (error) {
+			return c.json({ status: 'erro', razao: error.message }, 500);
+		}
+		return c.json({ total: data?.length ?? 0, erros: data ?? [] });
 	});
 
 	return router;

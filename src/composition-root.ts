@@ -79,7 +79,7 @@ export async function bootApp(): Promise<BootResult> {
 
 	app.route('/', healthRouter);
 	app.route('/', logsRouter);
-	app.route('/', createAdminRouter({ postgres }));
+	app.route('/', createAdminRouter({ postgres, supabase }));
 
 	const webhookRouter = createWebhookMessageRouter({
 		openai,

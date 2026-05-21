@@ -6,6 +6,7 @@ import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { LeadCamilaRow } from '../clients/supabase.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import { nowBRT } from '../domain/data-brt.js';
+import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
 import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
@@ -174,6 +175,39 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 					},
 				});
 			}
+
+			// Instrumentação de eventos — best-effort, nunca bloqueia o fluxo
+			{
+				const toolToEvento: Partial<Record<string, EventoTipo>> = {
+					criar_agendamento: 'agendamento_criado',
+					cancelar_agendamento: 'agendamento_cancelado',
+					reagendar_agendamento: 'agendamento_reagendado',
+					envio_pix: 'pix_enviado',
+					atualizar_sinal: 'sinal_pago',
+					enviar_catalogo: 'catalogo_enviado',
+					enviar_pdf_curso: 'curso_enviado',
+					transferir_humano: 'transferido_humano',
+				};
+				const tipoEvento = toolToEvento[tc.function.name];
+				if (tipoEvento) {
+					const result = toolResult as Record<string, unknown>;
+					const v = result.valor ?? result.valor_sinal;
+					const valor = typeof v === 'number' ? v : typeof v === 'string' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
+					registrarEvento(deps.supabase, {
+						telefone: ctx.telefone,
+						cliente_nome: ctx.lead.nome ?? undefined,
+						tipo: toolResult.status === 'erro' ? 'erro_tool' : tipoEvento,
+						sucesso: toolResult.status !== 'erro',
+						detalhes: {
+							tool: tc.function.name,
+							args: parsed.data as Record<string, unknown>,
+							result,
+						},
+						valor,
+					}).catch(() => undefined);
+				}
+			}
+
 			messages.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
 
 			// NOTE: tool messages are NOT saved to long-term memory.

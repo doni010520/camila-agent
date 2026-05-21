@@ -7,6 +7,8 @@ import { getEnv } from '../infra/env.js';
 import { rootLogger } from '../infra/logger.js';
 import { runEnqueteFinalizacao } from '../jobs/enquete-finalizacao.js';
 import { runLembreteAmanha } from '../jobs/lembrete-amanha.js';
+import { runRelatorioDiario } from '../jobs/relatorio-diario.js';
+import { runRelatorioErros } from '../jobs/relatorio-erros.js';
 import { runSyncClientes } from '../jobs/sync-clientes.js';
 
 export interface CronDeps {
@@ -77,6 +79,34 @@ export function createCronRouter(deps: CronDeps): Hono {
 			return c.json({ status: 'ok', ...result });
 		} catch (err) {
 			log.error({ err }, 'Cron sync-clientes failed');
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	router.post('/cron/relatorio-diario', async (c) => {
+		const log = rootLogger.child({ job: 'cron-relatorio-diario' });
+		try {
+			const resumo = await runRelatorioDiario({
+				supabase: deps.supabase,
+				uazapi: deps.uazapi,
+			});
+			return c.json({ status: 'ok', ...resumo });
+		} catch (err) {
+			log.error({ err }, 'Cron relatorio-diario failed');
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	router.post('/cron/relatorio-erros', async (c) => {
+		const log = rootLogger.child({ job: 'cron-relatorio-erros' });
+		try {
+			await runRelatorioErros({
+				supabase: deps.supabase,
+				uazapi: deps.uazapi,
+			});
+			return c.json({ status: 'ok' });
+		} catch (err) {
+			log.error({ err }, 'Cron relatorio-erros failed');
 			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
 		}
 	});

@@ -9,6 +9,7 @@ import type { TrinksClient } from '../clients/trinks.js';
 import { isButtonClick, uazapiWebhookSchema } from '../clients/uazapi.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import { MessageDebouncer } from '../domain/debounce.js';
+import { registrarEvento } from '../domain/eventos.js';
 import { LeadManager } from '../domain/lead.js';
 import { MediaRouter } from '../domain/media-router.js';
 import { ChatMemory } from '../domain/memory.js';
@@ -258,6 +259,15 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 
 		// Push to debouncer (responds 200 immediately, agent runs after debounce window)
 		debouncer.push(telefone, text);
+
+		// Registra evento de mensagem recebida — best-effort, não persiste o texto (LGPD)
+		registrarEvento(deps.supabase, {
+			telefone,
+			tipo: 'mensagem_recebida',
+			cliente_nome: waName,
+			detalhes: { message_type: message.messageType, len: text.length },
+		}).catch(() => undefined);
+
 		return c.json({ status: 'ok', debounced: true });
 	});
 
