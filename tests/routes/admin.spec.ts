@@ -77,25 +77,13 @@ async function getAdmin(app: Hono, path: string, authHeader?: string) {
 describe('GET /admin/erros — auth', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('returns 401 without auth when secret is set', async () => {
+	it('returns 200 without auth (auth removed)', async () => {
 		const { app } = makeApp('mysecret');
 		const res = await getAdmin(app, '/admin/erros');
-		expect(res.status).toBe(401);
-	});
-
-	it('returns 401 with wrong Bearer', async () => {
-		const { app } = makeApp('mysecret');
-		const res = await getAdmin(app, '/admin/erros', 'Bearer wrong');
-		expect(res.status).toBe(401);
-	});
-
-	it('returns 200 with correct Bearer', async () => {
-		const { app } = makeApp('mysecret');
-		const res = await getAdmin(app, '/admin/erros', 'Bearer mysecret');
 		expect(res.status).toBe(200);
 	});
 
-	it('returns 200 with no auth when no secret set', async () => {
+	it('returns 200 with no secret set', async () => {
 		const { app } = makeApp();
 		const res = await getAdmin(app, '/admin/erros');
 		expect(res.status).toBe(200);
@@ -138,15 +126,9 @@ describe('GET /admin/erros — content', () => {
 describe('GET /admin/relatorio — auth', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('returns 401 without auth when secret is set', async () => {
+	it('returns 200 without auth (auth removed)', async () => {
 		const { app } = makeApp('mysecret');
 		const res = await getAdmin(app, '/admin/relatorio');
-		expect(res.status).toBe(401);
-	});
-
-	it('returns 200 with correct Bearer', async () => {
-		const { app } = makeApp('mysecret');
-		const res = await getAdmin(app, '/admin/relatorio', 'Bearer mysecret');
 		expect(res.status).toBe(200);
 	});
 });

@@ -11,7 +11,6 @@ import type { PostgresClient } from '../clients/postgres.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
 import { todayBRT } from '../domain/data-brt.js';
 import { agregarEventos } from '../jobs/relatorio-diario.js';
-import { getEnv } from '../infra/env.js';
 
 // Re-exporta os HTMLs para uso no composition-root
 export { DASHBOARD_HTML, CLIENTE_HTML } from './dashboard-html.js';
@@ -42,17 +41,6 @@ function calcRange(periodo: string, dataParam: string | undefined): { inicio: st
 
 export function createAdminRouter(deps: AdminDeps): Hono {
 	const router = new Hono();
-	const env = getEnv();
-
-	router.use('/admin/*', async (c, next) => {
-		if (env.WEBHOOK_SHARED_SECRET) {
-			const auth = c.req.header('Authorization');
-			if (auth !== `Bearer ${env.WEBHOOK_SHARED_SECRET}`) {
-				return c.json({ status: 'erro', razao: 'Unauthorized' }, 401);
-			}
-		}
-		return next();
-	});
 
 	router.get('/admin/sessions', async (c) => {
 		const sessions = await deps.postgres.listChatSessions();
