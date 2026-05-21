@@ -290,9 +290,12 @@ function loadData(){
   closeDrill();
   document.getElementById('ct').innerHTML = '<div class="loading">Carregando...</div>';
   apiFetch('/admin/relatorio?periodo=' + cliPer)
-    .then(function(d){ render(d.resumo || d); })
-    .catch(function(){
-      document.getElementById('ct').innerHTML = '<div class="loading">Erro ao carregar. Tente novamente.</div>';
+    .then(function(d){
+      try { render(d.resumo || d); }
+      catch(e){ document.getElementById('ct').innerHTML = '<div class="loading">Erro JS: ' + String(e) + '</div>'; }
+    })
+    .catch(function(e){
+      document.getElementById('ct').innerHTML = '<div class="loading">Erro rede: ' + String(e) + '</div>';
     });
 }
 
