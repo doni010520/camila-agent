@@ -115,10 +115,11 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
       <button class="pbt" data-p="mes" onclick="setPeriodo('mes')">M&#xEA;s</button>
     </div>
   </header>
-  <main><div id="ct"><div class="loading">Carregando...</div></div></main>
+  <main><div id="ct"><div class="loading" id="st">JS_NAO_RODOU</div></div></main>
 </div>
 
 <script>
+document.getElementById('st').textContent = 'JS_RODOU_SEM_FETCH';
 var cliPer = 'dia';
 var drillOpen = '';
 
@@ -288,7 +289,7 @@ function render(r){
 
 function loadData(){
   closeDrill();
-  document.getElementById('ct').innerHTML = '<div class="loading">Carregando...</div>';
+  document.getElementById('ct').innerHTML = '<div class="loading" id="st">JS_RODOU_FETCH_PENDENTE</div>';
   apiFetch('/admin/relatorio?periodo=' + cliPer)
     .then(function(d){
       try { render(d.resumo || d); }
