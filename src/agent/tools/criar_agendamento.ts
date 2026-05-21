@@ -87,6 +87,41 @@ export function createCriarAgendamento(deps: {
 				/* idempotency check is best-effort; fall through to create */
 			}
 
+			// 3aa. CHECK CONFLITO: profissional já tem agendamento ativo sobrepondo o horário?
+			// Trinks NÃO bloqueia overlap — temos que validar nós mesmos antes de POST.
+			try {
+				const dataDiaConflito = input.data_e_hora.substring(0, 10);
+				const ocupacao = await trinks.listAgendamentos({
+					profissionalId,
+					dataInicio: `${dataDiaConflito}T00:00:00`,
+					dataFim: `${dataDiaConflito}T23:59:59`,
+				});
+				const propostoInicio = new Date(`${input.data_e_hora}${input.data_e_hora.includes('-03') || input.data_e_hora.endsWith('Z') ? '' : '-03:00'}`).getTime();
+				const propostoFim = propostoInicio + servico.duracao_minutos * 60_000;
+				const conflito = (ocupacao.data ?? []).find((a) => {
+					if (!ACTIVE_STATUSES.has(a.status.id)) return false;
+					const ini = new Date(`${a.dataHoraInicio}${a.dataHoraInicio.includes('-03') || a.dataHoraInicio.endsWith('Z') ? '' : '-03:00'}`).getTime();
+					const fim = ini + (a.duracaoEmMinutos ?? 60) * 60_000;
+					return propostoInicio < fim && propostoFim > ini;
+				});
+				if (conflito) {
+					return {
+						status: 'erro',
+						razao: 'Horário indisponível: a profissional já tem outro atendimento nesse intervalo. Ofereça outro horário.',
+						detalhes: {
+							conflitoComServico: conflito.servico.nome,
+							conflitoDataHora: conflito.dataHoraInicio,
+							conflitoDuracao: conflito.duracaoEmMinutos,
+						},
+					};
+				}
+			} catch (err) {
+				// Falha na consulta? Loga e segue — preferimos não bloquear cliente por bug na verificação,
+				// mas se Trinks rejeitar o POST por overlap nativo (caso ative), volta erro normal.
+				// eslint-disable-next-line no-console
+				console.warn('Conflict check failed, prosseguindo:', err);
+			}
+
 			// 3b. POST create agendamento
 			let agendamentoId: number;
 			try {

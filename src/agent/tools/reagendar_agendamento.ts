@@ -102,6 +102,40 @@ export function createReagendarAgendamento(deps: {
 
 			const dataAnterior = antigo.dataHoraInicio;
 
+			// 2.5 CHECK CONFLITO no novo horário ANTES de cancelar o antigo.
+			// Trinks não bloqueia overlap — validamos aqui pra não criar dupla agenda.
+			try {
+				const dataDia = input.nova_data_hora.substring(0, 10);
+				const ocupacao = await trinks.listAgendamentos({
+					profissionalId: antigo.profissional.id,
+					dataInicio: `${dataDia}T00:00:00`,
+					dataFim: `${dataDia}T23:59:59`,
+				});
+				const propostoInicio = new Date(`${input.nova_data_hora}${input.nova_data_hora.includes('-03') || input.nova_data_hora.endsWith('Z') ? '' : '-03:00'}`).getTime();
+				const propostoFim = propostoInicio + (antigo.duracaoEmMinutos ?? 60) * 60_000;
+				const conflito = (ocupacao.data ?? []).find((a) => {
+					if (a.id === agIdAntigo) return false; // o antigo vai ser cancelado
+					if (!ACTIVE_STATUSES.has(a.status.id)) return false;
+					const ini = new Date(`${a.dataHoraInicio}${a.dataHoraInicio.includes('-03') || a.dataHoraInicio.endsWith('Z') ? '' : '-03:00'}`).getTime();
+					const fim = ini + (a.duracaoEmMinutos ?? 60) * 60_000;
+					return propostoInicio < fim && propostoFim > ini;
+				});
+				if (conflito) {
+					return {
+						status: 'erro',
+						razao: 'Novo horário indisponível: a profissional já tem outro atendimento nesse intervalo. Mantenha o antigo e ofereça outro horário pra cliente.',
+						detalhes: {
+							conflitoComServico: conflito.servico.nome,
+							conflitoDataHora: conflito.dataHoraInicio,
+							agendamentoAntigoIntacto: agIdAntigo,
+						},
+					};
+				}
+			} catch (err) {
+				// eslint-disable-next-line no-console
+				console.warn('Reagendar conflict check failed, prosseguindo:', err);
+			}
+
 			// 3. CANCELA o antigo (PATCH /status/cancelado)
 			try {
 				await trinks.cancelarAgendamento(agIdAntigo, { motivo: 'Reagendamento' });

@@ -366,6 +366,7 @@ export class TrinksClient {
 
 	async listAgendamentos(filters?: {
 		clienteId?: number;
+		profissionalId?: number;
 		dataInicio?: string;
 		dataFim?: string;
 		page?: number;
@@ -373,6 +374,7 @@ export class TrinksClient {
 	}) {
 		const params: Record<string, string> = {};
 		if (filters?.clienteId) params.clienteId = String(filters.clienteId);
+		if (filters?.profissionalId) params.profissionalId = String(filters.profissionalId);
 		if (filters?.dataInicio) params.dataInicio = filters.dataInicio;
 		if (filters?.dataFim) params.dataFim = filters.dataFim;
 		if (filters?.page) params.page = String(filters.page);
