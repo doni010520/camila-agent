@@ -153,6 +153,22 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 			});
 		}
 
+		// Agendamentos: deduplicar por agendamento_id (retentativas da tool não devem
+		// aparecer duas vezes na lista). Eventos sem agendamento_id são ignorados.
+		if (tipo === 'agendamentos') {
+			const seen = new Map<string, EventRow>();
+			for (const row of rows) {
+				const det = (row.detalhes ?? {}) as Record<string, unknown>;
+				const res = (det.result ?? {}) as Record<string, unknown>;
+				const agId = res.agendamento_id != null ? String(res.agendamento_id) : null;
+				if (agId === null) continue;
+				if (!seen.has(agId)) seen.set(agId, row);
+			}
+			rows = Array.from(seen.values()).sort(
+				(a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+			);
+		}
+
 		const itens = rows.map((r) => {
 			const det = (r.detalhes ?? {}) as Record<string, unknown>;
 			const res = (det.result ?? {}) as Record<string, unknown>;

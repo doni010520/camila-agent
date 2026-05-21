@@ -63,8 +63,8 @@ describe('runRelatorioDiario', () => {
 
 	it('counts each tipo correctly', async () => {
 		const eventos = [
-			makeEvento('agendamento_criado', { telefone: 'A', valor: 100 }),
-			makeEvento('agendamento_criado', { telefone: 'B', valor: 50 }),
+			makeEvento('agendamento_criado', { telefone: 'A', valor: 100, detalhes: { result: { agendamento_id: 1 } } }),
+			makeEvento('agendamento_criado', { telefone: 'B', valor: 50, detalhes: { result: { agendamento_id: 2 } } }),
 			makeEvento('agendamento_cancelado', { telefone: 'C' }),
 			makeEvento('agendamento_reagendado', { telefone: 'D' }),
 			makeEvento('transferido_humano', { telefone: 'E' }),
@@ -92,8 +92,8 @@ describe('runRelatorioDiario', () => {
 	it('counts unique telefones correctly (same phone multiple events)', async () => {
 		const eventos = [
 			makeEvento('mensagem_recebida', { telefone: 'X' }),
-			makeEvento('agendamento_criado', { telefone: 'X' }),
-			makeEvento('agendamento_criado', { telefone: 'Y' }),
+			makeEvento('agendamento_criado', { telefone: 'X', detalhes: { result: { agendamento_id: 10 } } }),
+			makeEvento('agendamento_criado', { telefone: 'Y', detalhes: { result: { agendamento_id: 11 } } }),
 		];
 		const sb = makeSupabase(eventos);
 		const ua = makeUazapi();
@@ -103,9 +103,9 @@ describe('runRelatorioDiario', () => {
 
 	it('extracts top servicos sorted by count', async () => {
 		const eventos = [
-			makeEvento('agendamento_criado', { detalhes: { result: { servico_nome: 'Hidratação', data_hora_inicio: '2026-05-21T10:00:00' } } }),
-			makeEvento('agendamento_criado', { detalhes: { result: { servico_nome: 'Hidratação', data_hora_inicio: '2026-05-21T14:00:00' } } }),
-			makeEvento('agendamento_criado', { detalhes: { result: { servico_nome: 'Corte', data_hora_inicio: '2026-05-21T09:00:00' } } }),
+			makeEvento('agendamento_criado', { detalhes: { result: { agendamento_id: 20, servico_nome: 'Hidratação', data_hora_inicio: '2026-05-21T10:00:00' } } }),
+			makeEvento('agendamento_criado', { detalhes: { result: { agendamento_id: 21, servico_nome: 'Hidratação', data_hora_inicio: '2026-05-21T14:00:00' } } }),
+			makeEvento('agendamento_criado', { detalhes: { result: { agendamento_id: 22, servico_nome: 'Corte', data_hora_inicio: '2026-05-21T09:00:00' } } }),
 		];
 		const sb = makeSupabase(eventos);
 		const ua = makeUazapi();
@@ -116,8 +116,8 @@ describe('runRelatorioDiario', () => {
 
 	it('extracts faixa horaria from data_hora_inicio', async () => {
 		const eventos = [
-			makeEvento('agendamento_criado', { detalhes: { result: { servico_nome: 'S', data_hora_inicio: '2026-05-21T10:30:00' } } }),
-			makeEvento('agendamento_criado', { detalhes: { result: { servico_nome: 'S', data_hora_inicio: '2026-05-21T14:00:00' } } }),
+			makeEvento('agendamento_criado', { detalhes: { result: { agendamento_id: 30, servico_nome: 'S', data_hora_inicio: '2026-05-21T10:30:00' } } }),
+			makeEvento('agendamento_criado', { detalhes: { result: { agendamento_id: 31, servico_nome: 'S', data_hora_inicio: '2026-05-21T14:00:00' } } }),
 		];
 		const sb = makeSupabase(eventos);
 		const ua = makeUazapi();
@@ -144,7 +144,7 @@ describe('runRelatorioDiario', () => {
 	});
 
 	it('sends message that does not mention errors', async () => {
-		const sb = makeSupabase([makeEvento('agendamento_criado', { valor: 100, detalhes: { result: { servico_nome: 'S', data_hora_inicio: '2026-05-21T10:00:00' } } })]);
+		const sb = makeSupabase([makeEvento('agendamento_criado', { valor: 100, detalhes: { result: { agendamento_id: 40, servico_nome: 'S', data_hora_inicio: '2026-05-21T10:00:00' } } })]);
 		const ua = makeUazapi();
 		await runRelatorioDiario({ supabase: sb as never, uazapi: ua as never });
 		const sentText = ua.sendText.mock.calls[0]?.[1] as string;
@@ -164,5 +164,32 @@ describe('runRelatorioDiario', () => {
 		const r = await runRelatorioDiario({ supabase: sb as never, uazapi: ua as never });
 		expect(r.sinais_pagos).toBe(3);
 		expect(r.receita_sinais).toBe(150);
+	});
+
+	it('deduplica eventos agendamento_criado com mesmo agendamento_id', async () => {
+		// Helena chamou criar_agendamento 2x para o mesmo agendamento (retentativa)
+		// → deve contar 1 agendamento e somar o valor apenas 1 vez
+		const eventos = [
+			makeEvento('agendamento_criado', { valor: 120, detalhes: { result: { agendamento_id: 999, servico_nome: 'Volume', data_hora_inicio: '2026-05-21T11:00:00' } } }),
+			makeEvento('agendamento_criado', { valor: 120, detalhes: { result: { agendamento_id: 999, servico_nome: 'Volume', data_hora_inicio: '2026-05-21T11:00:00' } } }),
+		];
+		const sb = makeSupabase(eventos);
+		const ua = makeUazapi();
+		const r = await runRelatorioDiario({ supabase: sb as never, uazapi: ua as never });
+		expect(r.agendamentos_criados).toBe(1);
+		expect(r.receita_potencial_agendada).toBe(120);
+		expect(r.top_servicos[0]).toEqual({ nome: 'Volume', total: 1 });
+	});
+
+	it('ignora agendamento_criado sem agendamento_id em detalhes', async () => {
+		// Evento legado ou edge case sem ID → não deve inflar métricas
+		const eventos = [
+			makeEvento('agendamento_criado', { valor: 100 }), // sem detalhes.result.agendamento_id
+		];
+		const sb = makeSupabase(eventos);
+		const ua = makeUazapi();
+		const r = await runRelatorioDiario({ supabase: sb as never, uazapi: ua as never });
+		expect(r.agendamentos_criados).toBe(0);
+		expect(r.receita_potencial_agendada).toBe(0);
 	});
 });

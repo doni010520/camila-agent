@@ -46,6 +46,10 @@ export async function agregarEventos(
 	if (error) throw new Error(`Failed query eventos_helena: ${error.message}`);
 
 	const telefonesUnicos = new Set<string>();
+	// Agendamentos deduplicados por agendamento_id (chave real da Trinks)
+	// Eventos sem agendamento_id em detalhes.result são ignorados nas métricas
+	// para evitar que retentativas da tool inflam contagem e receita.
+	const agendamentosVistos = new Set<string>();
 	let agCriados = 0,
 		agCancel = 0,
 		agReag = 0;
@@ -65,21 +69,26 @@ export async function agregarEventos(
 		const result = (detalhes.result ?? {}) as Record<string, unknown>;
 
 		switch (e.tipo) {
-			case 'agendamento_criado':
+			case 'agendamento_criado': {
+				// Dedup: ignorar se não tem agendamento_id ou se já contamos esse ID
+				const agId =
+					result.agendamento_id != null ? String(result.agendamento_id) : null;
+				if (agId === null || agendamentosVistos.has(agId)) break;
+				agendamentosVistos.add(agId);
+
 				agCriados++;
 				receitaAgendada += Number(e.valor ?? 0);
-				{
-					const servicoNome = typeof result.servico_nome === 'string' ? result.servico_nome : null;
-					if (servicoNome) servicosCount[servicoNome] = (servicosCount[servicoNome] ?? 0) + 1;
-					const dh =
-						typeof result.data_hora_inicio === 'string' ? result.data_hora_inicio : null;
-					if (dh) {
-						const hora = parseInt(dh.slice(11, 13), 10);
-						const faixa = `${hora}h-${hora + 2}h`;
-						horariosCount[faixa] = (horariosCount[faixa] ?? 0) + 1;
-					}
+				const servicoNome = typeof result.servico_nome === 'string' ? result.servico_nome : null;
+				if (servicoNome) servicosCount[servicoNome] = (servicosCount[servicoNome] ?? 0) + 1;
+				const dh =
+					typeof result.data_hora_inicio === 'string' ? result.data_hora_inicio : null;
+				if (dh) {
+					const hora = parseInt(dh.slice(11, 13), 10);
+					const faixa = `${hora}h-${hora + 2}h`;
+					horariosCount[faixa] = (horariosCount[faixa] ?? 0) + 1;
 				}
 				break;
+			}
 			case 'agendamento_cancelado':
 				agCancel++;
 				break;
