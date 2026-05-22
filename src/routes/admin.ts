@@ -272,6 +272,16 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		}
 	});
 
+	/** Lista todos os serviços do catálogo (cache Supabase). */
+	router.get('/admin/servicos', async (c) => {
+		const { data, error } = await deps.supabase.raw
+			.from('servicos')
+			.select('id, nome, duracao_minutos, preco')
+			.order('nome');
+		if (error) return c.json({ status: 'erro', razao: error.message }, 500);
+		return c.json({ total: data?.length ?? 0, servicos: data ?? [] });
+	});
+
 	/** Lista de erros — SEPARADO. Cliente NUNCA vê esse endpoint. */
 	router.get('/admin/erros', async (c) => {
 		const n = Number(c.req.query('n') ?? 50);
