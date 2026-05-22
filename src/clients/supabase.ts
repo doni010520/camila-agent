@@ -4,6 +4,63 @@ import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
 
+/**
+ * Ranking semântico do match de serviço.
+ * Cliente diz "volume light" → não queremos "Manutenção volume light 15 dias"
+ * exceto se ela mencionar manutenção. Cliente recorrente vs nova decide via
+ * camada superior (Helena/prompt), aqui só priorizamos pela intenção do texto.
+ */
+function normalizarServicoTexto(s: string): string {
+	return s
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[̀-ͯ]/g, '')
+		.replace(/[^a-z0-9\s]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+export function scoreServicoMatch(input: string, nomeServico: string): number {
+	const i = normalizarServicoTexto(input);
+	const n = normalizarServicoTexto(nomeServico);
+	if (!i || !n) return 0;
+
+	// Detecta intenção de manutenção. Aceita typos comuns: manuten/manute/manten
+	const inputQuerManuten = /manute|manten/.test(i) || /15\s*dias|25\s*dias|retoque/.test(i);
+	const nomeEhManuten = /manute|manten/.test(n);
+
+	// match exato vence tudo
+	if (n === i) return 1000;
+
+	let score = 0;
+
+	// Substring match (input dentro do nome)
+	if (n.includes(i)) score += 50;
+
+	// Cada palavra do input que aparece no nome conta
+	const inputWords = i.split(' ').filter((w) => w.length >= 3);
+	const nomeWords = new Set(n.split(' '));
+	const wordMatches = inputWords.filter((w) => nomeWords.has(w)).length;
+	score += wordMatches * 15;
+
+	// Sem palavra em comum E sem substring → não é match
+	if (score === 0) return 0;
+
+	// Penalidade/bonus de intenção de manutenção
+	if (inputQuerManuten && nomeEhManuten) score += 25;
+	if (!inputQuerManuten && nomeEhManuten) score -= 40;
+	if (inputQuerManuten && !nomeEhManuten) score -= 20;
+
+	// Bonus se nome começa com o input
+	if (n.startsWith(i)) score += 20;
+
+	// Penalidade leve por nome muito mais longo que input (sinal de especialização)
+	const lenRatio = n.length / Math.max(i.length, 1);
+	if (lenRatio > 3) score -= 5;
+
+	return score;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Schemas — Supabase tables (from REFERENCE-PAYLOADS §6 + SPEC §4)
 // ═══════════════════════════════════════════════════════════════
@@ -169,14 +226,34 @@ export class AppSupabaseClient {
 	}
 
 	async findServicoByName(nome: string): Promise<ServicoRow | null> {
-		const { data, error } = await this.client
-			.from('servicos')
-			.select('*')
-			.ilike('nome', `%${nome}%`)
-			.limit(1)
-			.maybeSingle();
+		// Pega TODOS os servicos (cache é pequeno, ~50 rows) e faz ranking
+		// semântico em memória. Antes era "ilike + limit 1" que retornava o
+		// primeiro do banco — cliente pedindo "Volume light" caía em
+		// "Manutenção volume light 15 dias" porque tinha id menor.
+		const { data, error } = await this.client.from('servicos').select('*');
 		if (error) throw new Error(`Supabase find servico: ${error.message}`);
-		return data ? servicoRowSchema.parse(data) : null;
+		if (!data || data.length === 0) return null;
+
+		const ranked = data
+			.map((row) => ({ row, score: scoreServicoMatch(nome, row.nome as string) }))
+			.filter((r) => r.score > 0)
+			.sort((a, b) => b.score - a.score);
+
+		if (ranked.length === 0) return null;
+		return servicoRowSchema.parse(ranked[0]?.row);
+	}
+
+	/** Lista os top-N matches ordenados por score (debug / aguardando_escolha) */
+	async findServicosByName(nome: string, topN = 3): Promise<ServicoRow[]> {
+		const { data, error } = await this.client.from('servicos').select('*');
+		if (error) throw new Error(`Supabase find servico: ${error.message}`);
+		if (!data) return [];
+		return data
+			.map((row) => ({ row, score: scoreServicoMatch(nome, row.nome as string) }))
+			.filter((r) => r.score > 0)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, topN)
+			.map((r) => servicoRowSchema.parse(r.row));
 	}
 
 	// ── Storage (catálogos bucket) ──

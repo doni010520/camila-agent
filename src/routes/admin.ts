@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import type { PostgresClient } from '../clients/postgres.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { TrinksClient } from '../clients/trinks.js';
+import type { UazapiClient } from '../clients/uazapi.js';
 import { findClienteByTelefone } from '../domain/cliente-lookup.js';
 import { todayBRT } from '../domain/data-brt.js';
 import { ACTIVE_STATUSES } from '../domain/trinks-status.js';
@@ -22,6 +23,7 @@ export interface AdminDeps {
 	postgres: PostgresClient;
 	supabase: AppSupabaseClient;
 	trinks: TrinksClient;
+	uazapi: UazapiClient;
 }
 
 function calcRange(periodo: string, dataParam: string | undefined): { inicio: string; fim: string } {
@@ -264,6 +266,31 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 				status_atual_id: readBack.status.id,
 				status_atual_nome: readBack.status.nome,
 			});
+		} catch (err) {
+			return c.json(
+				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
+				500,
+			);
+		}
+	});
+
+	/**
+	 * Envia mensagem de texto pra um telefone via UAZAPI.
+	 * Body: { telefone: '5571...', text: 'mensagem' }
+	 * Uso operacional: retomar conversa após bug, mandar aviso, etc.
+	 * NÃO aciona Helena — é um envio direto. Ainda assim, a próxima
+	 * resposta do cliente cai no fluxo normal da Helena.
+	 */
+	router.post('/admin/send-text', async (c) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { telefone?: string; text?: string }
+			| null;
+		if (!body?.telefone || !body?.text) {
+			return c.json({ status: 'erro', razao: 'telefone+text obrigatórios' }, 400);
+		}
+		try {
+			await deps.uazapi.sendText(body.telefone, body.text);
+			return c.json({ status: 'ok', telefone: body.telefone, len: body.text.length });
 		} catch (err) {
 			return c.json(
 				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
