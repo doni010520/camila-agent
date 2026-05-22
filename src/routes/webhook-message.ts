@@ -39,8 +39,10 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 	const debouncer = new MessageDebouncer();
 	debouncer.setCallback(async (telefone, combinedText) => {
 		const log = createRequestLogger(telefone);
+		let nomeCliente: string | undefined;
 		try {
 			const lead = await leadManager.getOrCreate({ telefone, wa_label: undefined });
+			nomeCliente = lead.nome ?? undefined;
 
 			await runAgent(
 				{ telefone, mensagem: combinedText, lead },
@@ -55,6 +57,18 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			);
 		} catch (err) {
 			log.error({ err }, 'Agent execution failed');
+			// Notifica time DE VERDADE antes de prometer pra cliente. Senão
+			// vira anti-fantasma negativo (Helena diz 'chamei a Camila' sem chamar).
+			const env = (await import('../infra/env.js')).getEnv();
+			const errMsg = err instanceof Error ? err.message : 'unknown';
+			try {
+				await deps.uazapi.sendText(
+					env.UAZAPI_GRUPO_TIME,
+					`🚨 *Helena travou*\n\nCliente: ${nomeCliente ?? telefone.slice(-4)}\nErro: ${errMsg.slice(0, 200)}\n\nA cliente recebeu fallback "tive um probleminha". Verificar se precisa intervir.`,
+				);
+			} catch {
+				/* notificação não pode bloquear o fallback pra cliente */
+			}
 			try {
 				await deps.uazapi.sendText(
 					telefone,
