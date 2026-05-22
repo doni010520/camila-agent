@@ -324,6 +324,35 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		}
 	});
 
+	/** Lista configuração dos cron jobs (lembrete, enquete, sync_clientes). */
+	router.get('/admin/cron', async (c) => {
+		const jobs = await deps.postgres.listCronJobs();
+		return c.json({ total: jobs.length, jobs });
+	});
+
+	/**
+	 * Atualiza um job. Body: { enabled?: boolean, cron_expressions?: string[], descricao?: string }
+	 * O scheduler em memória re-le a config a cada 60s e aplica mudanças sem deploy.
+	 */
+	router.patch('/admin/cron/:job', async (c) => {
+		const job = c.req.param('job');
+		const body = (await c.req.json().catch(() => null)) as
+			| { enabled?: boolean; cron_expressions?: string[]; descricao?: string }
+			| null;
+		if (!body) return c.json({ status: 'erro', razao: 'body inválido' }, 400);
+		try {
+			await deps.postgres.updateCronJob(job, body);
+			const jobs = await deps.postgres.listCronJobs();
+			const atualizado = jobs.find((j) => j.job_name === job);
+			return c.json({ status: 'ok', job: atualizado });
+		} catch (err) {
+			return c.json(
+				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
+				500,
+			);
+		}
+	});
+
 	/** Lista todos os serviços do catálogo (cache Supabase). */
 	router.get('/admin/servicos', async (c) => {
 		const { data, error } = await deps.supabase.raw

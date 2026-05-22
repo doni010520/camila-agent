@@ -92,7 +92,69 @@ export class PostgresClient {
 				ON webhook_inbound(recebido_em DESC);
 			CREATE INDEX IF NOT EXISTS idx_webhook_inbound_telefone
 				ON webhook_inbound(telefone, recebido_em DESC);
+
+			CREATE TABLE IF NOT EXISTS cron_jobs (
+				job_name TEXT PRIMARY KEY,
+				enabled BOOLEAN NOT NULL DEFAULT true,
+				cron_expressions TEXT[] NOT NULL DEFAULT '{}',
+				descricao TEXT,
+				ultima_execucao_em TIMESTAMPTZ,
+				ultima_execucao_resultado JSONB,
+				atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
 		`);
+
+		// Seed dos jobs padrão (idempotente — só insere se não existir).
+		await this.pool.query(`
+			INSERT INTO cron_jobs (job_name, enabled, cron_expressions, descricao) VALUES
+				('lembrete',       true, ARRAY['0 9 * * *','0 13 * * *','0 18 * * *'], 'Lembrete pra confirmar agendamento de amanhã (3x ao dia, igual n8n velho)'),
+				('enquete',        true, ARRAY['0 20 * * *'],                          'Enquete pós-atendimento (final do dia)'),
+				('sync_clientes',  true, ARRAY['0 4 * * 0'],                           'Sincroniza clientes da Trinks pro Postgres (domingo madrugada)')
+			ON CONFLICT (job_name) DO NOTHING;
+		`);
+	}
+
+	// ── Cron jobs config ──
+
+	async listCronJobs(): Promise<Array<{
+		job_name: string;
+		enabled: boolean;
+		cron_expressions: string[];
+		descricao: string | null;
+		ultima_execucao_em: string | null;
+		ultima_execucao_resultado: unknown;
+		atualizado_em: string;
+	}>> {
+		return this.query(
+			`SELECT job_name, enabled, cron_expressions, descricao,
+			        ultima_execucao_em::text AS ultima_execucao_em,
+			        ultima_execucao_resultado,
+			        atualizado_em::text AS atualizado_em
+			 FROM cron_jobs ORDER BY job_name`,
+		);
+	}
+
+	async updateCronJob(jobName: string, patch: { enabled?: boolean; cron_expressions?: string[]; descricao?: string }): Promise<void> {
+		const sets: string[] = [];
+		const params: unknown[] = [];
+		let i = 1;
+		if (patch.enabled !== undefined) { sets.push(`enabled = $${i++}`); params.push(patch.enabled); }
+		if (patch.cron_expressions !== undefined) { sets.push(`cron_expressions = $${i++}`); params.push(patch.cron_expressions); }
+		if (patch.descricao !== undefined) { sets.push(`descricao = $${i++}`); params.push(patch.descricao); }
+		if (sets.length === 0) return;
+		sets.push(`atualizado_em = NOW()`);
+		params.push(jobName);
+		await this.pool.query(
+			`UPDATE cron_jobs SET ${sets.join(', ')} WHERE job_name = $${i}`,
+			params,
+		);
+	}
+
+	async marcarExecucaoCron(jobName: string, resultado: unknown): Promise<void> {
+		await this.pool.query(
+			`UPDATE cron_jobs SET ultima_execucao_em = NOW(), ultima_execucao_resultado = $1::jsonb WHERE job_name = $2`,
+			[JSON.stringify(resultado), jobName],
+		);
 	}
 
 	private roleToLangchainType(role: string): string {

@@ -21,6 +21,10 @@ import { UazapiClient } from './clients/uazapi.js';
 import { LeadManager } from './domain/lead.js';
 import { getEnv } from './infra/env.js';
 import { rootLogger } from './infra/logger.js';
+import { Scheduler } from './infra/scheduler.js';
+import { runEnqueteFinalizacao } from './jobs/enquete-finalizacao.js';
+import { runLembreteAmanha } from './jobs/lembrete-amanha.js';
+import { runSyncClientes } from './jobs/sync-clientes.js';
 import { createCronRouter } from './routes/cron.js';
 import { createAdminRouter, DASHBOARD_HTML, CLIENTE_HTML } from './routes/admin.js';
 import { healthRouter } from './routes/health.js';
@@ -99,6 +103,28 @@ export async function bootApp(): Promise<BootResult> {
 	const cronRouter = createCronRouter({ trinks, supabase, uazapi, postgres });
 	app.route('/', cronRouter);
 
+	// ── Scheduler in-process (substitui cron do Easypanel) ──
+	const scheduler = new Scheduler(postgres);
+	scheduler.register('lembrete', () =>
+		runLembreteAmanha({
+			trinks,
+			supabase,
+			uazapi,
+			postgres,
+			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+		}),
+	);
+	scheduler.register('enquete', () =>
+		runEnqueteFinalizacao({
+			trinks,
+			supabase,
+			uazapi,
+			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+		}),
+	);
+	scheduler.register('sync_clientes', () => runSyncClientes({ trinks, postgres }));
+	scheduler.start().catch((err) => log.error({ err }, 'Scheduler failed to start'));
+
 	// ── Global error handler ──
 	app.onError((err, c) => {
 		log.error({ err, path: c.req.path, method: c.req.method }, 'Unhandled error');
@@ -109,6 +135,7 @@ export async function bootApp(): Promise<BootResult> {
 
 	const shutdown = async () => {
 		log.info('Shutting down...');
+		await scheduler.stop();
 		await postgres.close();
 	};
 

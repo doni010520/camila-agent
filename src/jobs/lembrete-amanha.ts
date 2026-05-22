@@ -112,6 +112,10 @@ export async function runLembreteAmanha(deps: LembreteDeps): Promise<LembreteRes
 				numero: number,
 			});
 			await deps.supabase.markLembreteEnviado(ag.id);
+
+			// Pausa 3s entre envios pra não estourar rate-limit da UAZAPI
+			// (mesma estratégia do workflow antigo do n8n).
+			await new Promise((r) => setTimeout(r, 3000));
 			enviados++;
 		} catch (err) {
 			log.error({ err, agId: ag.id }, 'Failed to send lembrete');
