@@ -225,7 +225,7 @@ function setView(v){
 }
 
 function exprToUi(expr){
-  var parts = expr.trim().split(/\s+/);
+  var parts = expr.trim().split(' ');
   if(parts.length < 5) return {hr:'00', min:'00', dias:[]};
   var minStr = parts[0], hrStr = parts[1], dow = parts[4];
   var hr = String(parseInt(hrStr, 10) || 0);

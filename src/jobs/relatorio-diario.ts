@@ -70,11 +70,13 @@ export async function agregarEventos(
 
 		switch (e.tipo) {
 			case 'agendamento_criado': {
-				// Dedup: ignorar se não tem agendamento_id ou se já contamos esse ID
+				// Dedup: se temos agendamento_id, ignorar retentativas com o mesmo ID.
+				// Se não há agendamento_id (evento legado ou edge case), contar normalmente
+				// para manter retrocompatibilidade com eventos de produção existentes.
 				const agId =
 					result.agendamento_id != null ? String(result.agendamento_id) : null;
-				if (agId === null || agendamentosVistos.has(agId)) break;
-				agendamentosVistos.add(agId);
+				if (agId !== null && agendamentosVistos.has(agId)) break;
+				if (agId !== null) agendamentosVistos.add(agId);
 
 				agCriados++;
 				receitaAgendada += Number(e.valor ?? 0);

@@ -181,15 +181,16 @@ describe('runRelatorioDiario', () => {
 		expect(r.top_servicos[0]).toEqual({ nome: 'Volume', total: 1 });
 	});
 
-	it('ignora agendamento_criado sem agendamento_id em detalhes', async () => {
-		// Evento legado ou edge case sem ID → não deve inflar métricas
+	it('conta agendamento_criado sem agendamento_id normalmente (retrocompatível)', async () => {
+		// Evento legado ou edge case sem ID → contar normalmente para não quebrar
+		// métricas de agendamentos que chegaram ao banco antes do campo existir
 		const eventos = [
 			makeEvento('agendamento_criado', { valor: 100 }), // sem detalhes.result.agendamento_id
 		];
 		const sb = makeSupabase(eventos);
 		const ua = makeUazapi();
 		const r = await runRelatorioDiario({ supabase: sb as never, uazapi: ua as never });
-		expect(r.agendamentos_criados).toBe(0);
-		expect(r.receita_potencial_agendada).toBe(0);
+		expect(r.agendamentos_criados).toBe(1);
+		expect(r.receita_potencial_agendada).toBe(100);
 	});
 });
