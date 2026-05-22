@@ -299,6 +299,31 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		}
 	});
 
+	/**
+	 * Injeta uma mensagem na chat memory (n8n_chat_histories) como se Helena
+	 * tivesse mandado. Usado quando a gente envia algo manualmente via
+	 * /admin/send-text e quer que a próxima resposta da cliente tenha contexto.
+	 * Body: { telefone, role: 'assistant'|'user', content }
+	 */
+	router.post('/admin/inject-message', async (c) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { telefone?: string; role?: string; content?: string }
+			| null;
+		if (!body?.telefone || !body?.content) {
+			return c.json({ status: 'erro', razao: 'telefone+content obrigatórios' }, 400);
+		}
+		const role = body.role === 'user' ? 'user' : 'assistant';
+		try {
+			await deps.postgres.saveChatMessage(body.telefone, role, body.content);
+			return c.json({ status: 'ok', telefone: body.telefone, role });
+		} catch (err) {
+			return c.json(
+				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
+				500,
+			);
+		}
+	});
+
 	/** Lista todos os serviços do catálogo (cache Supabase). */
 	router.get('/admin/servicos', async (c) => {
 		const { data, error } = await deps.supabase.raw
