@@ -100,6 +100,15 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
 .fa-d2{animation-delay:.15s}
 .fa-d3{animation-delay:.25s}
 
+/* -- Date picker -- */
+.date-wrap{display:flex;align-items:center;gap:4px}
+.date-inp{border:1px solid var(--bdr);background:transparent;color:var(--ink);font-family:'Josefin Sans',sans-serif;font-size:.62rem;letter-spacing:.06em;padding:7px 10px;outline:none;cursor:pointer;transition:border-color .15s;width:130px}
+.date-inp:focus,.date-inp:hover{border-color:var(--acc)}
+.date-inp::-webkit-calendar-picker-indicator{opacity:.45;cursor:pointer}
+.btn-clr{border:none;background:none;color:var(--mut);font-size:.9rem;cursor:pointer;padding:0 3px;line-height:1;transition:color .15s}
+.btn-clr:hover{color:var(--dk)}
+.date-badge{font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;color:var(--acc);margin-left:4px;white-space:nowrap}
+
 /* -- View tabs -- */
 .nav-tabs{display:flex;border:1px solid var(--bdr)}
 .ntab{padding:8px 16px;border:none;background:transparent;color:var(--mut);font-family:'Josefin Sans',sans-serif;font-size:.6rem;letter-spacing:.22em;text-transform:uppercase;cursor:pointer;transition:all .15s;border-right:1px solid var(--bdr)}
@@ -177,6 +186,10 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
       <button class="pbt" data-p="semana" onclick="setPeriodo('semana')">7 dias</button>
       <button class="pbt" data-p="mes" onclick="setPeriodo('mes')">M&#xEA;s</button>
     </div>
+    <div class="date-wrap" id="date-wrap">
+      <input type="date" id="date-inp" class="date-inp" onchange="setData(this.value)" title="Ver dia espec&#xED;fico">
+      <button class="btn-clr" id="btn-clr-date" onclick="clearData()" style="display:none" title="Voltar para hoje">&#xD7;</button>
+    </div>
   </header>
   <main><div id="ct"><div class="loading">Carregando...</div></div></main>
 </div>
@@ -198,6 +211,7 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
 
 <script>
 var cliPer = 'dia';
+var cliData = '';
 var drillOpen = '';
 
 /* ── Cron state ── */
@@ -216,11 +230,29 @@ function apiPatch(path, body){
   }).then(function(r){ if(!r.ok) throw new Error('err ' + r.status); return r.json(); });
 }
 
+function setData(val){
+  cliData = val;
+  var btn = document.getElementById('btn-clr-date');
+  if(btn) btn.style.display = val ? '' : 'none';
+  loadData();
+}
+
+function clearData(){
+  cliData = '';
+  var inp = document.getElementById('date-inp');
+  if(inp) inp.value = '';
+  var btn = document.getElementById('btn-clr-date');
+  if(btn) btn.style.display = 'none';
+  loadData();
+}
+
 function setView(v){
   cView = v;
   document.querySelectorAll('.ntab').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-v') === v); });
   var pb = document.getElementById('pbts-wrap');
   if(pb) pb.style.display = v === 'metricas' ? '' : 'none';
+  var dw = document.getElementById('date-wrap');
+  if(dw) dw.style.display = v === 'metricas' ? '' : 'none';
   if(v === 'metricas'){ loadData(); } else { loadCrons(); }
 }
 
@@ -617,12 +649,19 @@ function render(r){
 function loadData(){
   closeDrill();
   document.getElementById('ct').innerHTML = '<div class="loading">Carregando...</div>';
-  apiFetch('/admin/relatorio?periodo=' + cliPer)
+  var url = '/admin/relatorio?periodo=' + cliPer;
+  if(cliData) url += '&data=' + cliData;
+  apiFetch(url)
     .then(function(d){ render(d.resumo || d); })
     .catch(function(){
       document.getElementById('ct').innerHTML = '<div class="loading">Erro ao carregar. Tente novamente.</div>';
     });
 }
+
+(function(){
+  var inp = document.getElementById('date-inp');
+  if(inp) inp.max = new Date().toLocaleDateString('sv-SE', {timeZone:'America/Bahia'});
+})();
 
 loadData();
 </script>
