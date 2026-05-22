@@ -99,6 +99,65 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
 .fa-d1{animation-delay:.05s}
 .fa-d2{animation-delay:.15s}
 .fa-d3{animation-delay:.25s}
+
+/* -- View tabs -- */
+.nav-tabs{display:flex;border:1px solid var(--bdr)}
+.ntab{padding:8px 16px;border:none;background:transparent;color:var(--mut);font-family:'Josefin Sans',sans-serif;font-size:.6rem;letter-spacing:.22em;text-transform:uppercase;cursor:pointer;transition:all .15s;border-right:1px solid var(--bdr)}
+.ntab:last-child{border-right:none}
+.ntab.active{background:var(--ink);color:var(--bg)}
+.ntab:hover:not(.active){background:var(--lt);color:var(--ink)}
+
+/* -- Cron section -- */
+.cron-list{display:flex;flex-direction:column;gap:1px;background:var(--bdr);border:1px solid var(--bdr)}
+.cron-card{background:var(--wh);padding:24px 22px;display:flex;flex-direction:column;gap:9px}
+.cron-disabled .cron-name{color:var(--mut)}
+.cron-disabled .cron-times,.cron-disabled .cron-last{opacity:.45}
+.cron-card-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cron-name{font-size:.8rem;font-weight:600;letter-spacing:.1em;color:var(--ink);text-transform:uppercase;flex:1}
+.cron-desc{font-size:.7rem;color:var(--mut);letter-spacing:.04em;line-height:1.55}
+.cron-times{font-size:.78rem;color:var(--dk);letter-spacing:.05em;font-weight:600}
+.cron-last{font-size:.65rem;color:var(--acc);letter-spacing:.05em}
+.cron-actions{margin-top:2px}
+.btn-edit{padding:6px 16px;border:1px solid var(--bdr);background:transparent;color:var(--mut);font-family:'Josefin Sans',sans-serif;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn-edit:hover{border-color:var(--acc);color:var(--acc)}
+
+/* -- Toggle switch -- */
+.toggle{position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-sl{position:absolute;inset:0;background:var(--bdr);border-radius:22px;transition:.25s}
+.toggle-sl:before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:var(--wh);border-radius:50%;transition:.25s;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.toggle input:checked + .toggle-sl{background:var(--acc)}
+.toggle input:checked + .toggle-sl:before{transform:translateX(18px)}
+
+/* -- Modal -- */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(44,24,16,.38);z-index:100;align-items:center;justify-content:center;padding:20px}
+.modal-bg.open{display:flex}
+.modal{background:var(--wh);max-width:520px;width:100%;max-height:90vh;overflow-y:auto;border:1px solid var(--bdr);padding:32px}
+.modal-ttl{font-size:.55rem;letter-spacing:.38em;text-transform:uppercase;color:var(--acc);margin-bottom:4px}
+.modal-sub{font-size:.88rem;font-weight:600;color:var(--ink);margin-bottom:22px;letter-spacing:.07em;text-transform:uppercase}
+.time-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--bdr);flex-wrap:wrap}
+.time-inp{width:42px;padding:7px 4px;border:1px solid var(--bdr);background:var(--bg);color:var(--ink);font-family:'Josefin Sans',sans-serif;font-size:.9rem;text-align:center;outline:none}
+.time-inp:focus{border-color:var(--acc)}
+.time-sep{color:var(--acc);font-size:1.1rem;font-weight:300}
+.dias-sel{display:flex;gap:4px;flex-wrap:wrap;flex:1;min-width:0}
+.dia-btn{padding:4px 7px;border:1px solid var(--bdr);background:transparent;color:var(--mut);font-family:'Josefin Sans',sans-serif;font-size:.58rem;letter-spacing:.08em;cursor:pointer;transition:all .12s;white-space:nowrap}
+.dia-btn.active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.dia-btn:hover:not(.active){background:var(--lt);color:var(--ink)}
+.btn-rm{background:none;border:none;color:var(--mut);font-size:1.1rem;cursor:pointer;padding:0 4px;line-height:1;transition:color .15s;flex-shrink:0}
+.btn-rm:hover{color:var(--dk)}
+.btn-add{padding:12px 0;border:none;background:transparent;color:var(--acc);font-family:'Josefin Sans',sans-serif;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;cursor:pointer;width:100%;text-align:left;transition:color .15s;border-bottom:1px solid var(--bdr);display:block}
+.btn-add:hover{color:var(--dk)}
+.modal-err{font-size:.72rem;color:#b94a3a;margin-top:10px;min-height:18px}
+.modal-ftr{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--bdr)}
+.btn-cancel{padding:9px 20px;border:1px solid var(--bdr);background:transparent;color:var(--mut);font-family:'Josefin Sans',sans-serif;font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn-cancel:hover{color:var(--ink);border-color:var(--ink)}
+.btn-save{padding:9px 22px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);font-family:'Josefin Sans',sans-serif;font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn-save:hover:not(:disabled){background:var(--dk);border-color:var(--dk)}
+.btn-save:disabled{opacity:.4;cursor:not-allowed}
+
+/* -- Toast -- */
+.toast{position:fixed;bottom:28px;right:24px;background:var(--ink);color:var(--bg);padding:11px 20px;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -109,7 +168,11 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
       <div class="hb-sub">Studio Camila Ros&#xE1;rio</div>
       <div class="hb-title">Helena &middot; Painel</div>
     </div>
-    <div class="pbts">
+    <div class="nav-tabs">
+      <button class="ntab active" data-v="metricas" onclick="setView('metricas')">Resultados</button>
+      <button class="ntab" data-v="crons" onclick="setView('crons')">Lembretes</button>
+    </div>
+    <div class="pbts" id="pbts-wrap">
       <button class="pbt active" data-p="dia" onclick="setPeriodo('dia')">Hoje</button>
       <button class="pbt" data-p="semana" onclick="setPeriodo('semana')">7 dias</button>
       <button class="pbt" data-p="mes" onclick="setPeriodo('mes')">M&#xEA;s</button>
@@ -118,9 +181,274 @@ main{max-width:960px;margin:0 auto;padding:40px 24px 64px}
   <main><div id="ct"><div class="loading">Carregando...</div></div></main>
 </div>
 
+<div id="modal-bg" class="modal-bg" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-ttl">Editar Hor&#xE1;rios</div>
+    <div class="modal-sub" id="modal-job-lbl"></div>
+    <div id="modal-slots"></div>
+    <button type="button" class="btn-add" onclick="addSlot()">+ Adicionar hor&#xE1;rio</button>
+    <div class="modal-err" id="modal-err"></div>
+    <div class="modal-ftr">
+      <button type="button" class="btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn-save" id="btn-save" onclick="saveModal()">Salvar</button>
+    </div>
+  </div>
+</div>
+<div id="toast-el" class="toast"></div>
+
 <script>
 var cliPer = 'dia';
 var drillOpen = '';
+
+/* ── Cron state ── */
+var cView = 'metricas';
+var cronJobs = [];
+var modalJob = null;
+var modalSlots = [];
+var DIAS_NOMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'S\xE1b'];
+var JOB_LABELS = {'lembrete': 'Lembretes', 'enquete': 'Enquete', 'sync_clientes': 'Sincronizar Clientes'};
+
+function apiPatch(path, body){
+  return fetch(window.location.origin + path, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function(r){ if(!r.ok) throw new Error('err ' + r.status); return r.json(); });
+}
+
+function setView(v){
+  cView = v;
+  document.querySelectorAll('.ntab').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-v') === v); });
+  var pb = document.getElementById('pbts-wrap');
+  if(pb) pb.style.display = v === 'metricas' ? '' : 'none';
+  if(v === 'metricas'){ loadData(); } else { loadCrons(); }
+}
+
+function exprToUi(expr){
+  var parts = expr.trim().split(/\s+/);
+  if(parts.length < 5) return {hr:'00', min:'00', dias:[]};
+  var minStr = parts[0], hrStr = parts[1], dow = parts[4];
+  var hr = String(parseInt(hrStr, 10) || 0);
+  var mn = String(parseInt(minStr, 10) || 0);
+  return {
+    hr: hr.length === 1 ? '0' + hr : hr,
+    min: mn.length === 1 ? '0' + mn : mn,
+    dias: dow === '*' ? [] : dow.split(',').map(Number)
+  };
+}
+
+function uiToExpr(hr, min, dias){
+  var hrN = parseInt(hr, 10); if(isNaN(hrN)) hrN = 0;
+  var mnN = parseInt(min, 10); if(isNaN(mnN)) mnN = 0;
+  var diasStr = dias.length === 0 ? '*' : dias.slice().sort(function(a,b){return a-b;}).join(',');
+  return String(mnN) + ' ' + String(hrN) + ' * * ' + diasStr;
+}
+
+function fmtExpr(expr){
+  var ui = exprToUi(expr);
+  var t = ui.hr + 'h' + (ui.min !== '00' ? ui.min : '');
+  if(ui.dias.length === 0) return t + ' diariamente';
+  return t + ' ' + ui.dias.map(function(d){ return DIAS_NOMES[d] || String(d); }).join('/');
+}
+
+function fmtLast(job){
+  if(!job.ultima_execucao_em) return 'Nunca executado';
+  var d = new Date(job.ultima_execucao_em);
+  var hoje = new Date().toLocaleDateString('pt-BR', {timeZone:'America/Bahia'});
+  var dtStr = d.toLocaleDateString('pt-BR', {timeZone:'America/Bahia'});
+  var hrStr = d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', timeZone:'America/Bahia'});
+  var res = job.ultima_execucao_resultado;
+  var suf = '';
+  if(res && typeof res === 'object'){
+    if(res.enviados !== undefined) suf = ' \xB7 ' + res.enviados + ' enviados';
+    else if(res.total !== undefined) suf = ' \xB7 ' + res.total + ' processados';
+    else if(res.error) suf = ' \xB7 ⚠️ erro';
+  }
+  var dl = dtStr === hoje ? 'hoje' : dtStr;
+  return '✅ \xDAltima: ' + dl + ' ' + hrStr + suf;
+}
+
+function loadCrons(){
+  var ct = document.getElementById('ct');
+  if(ct) ct.innerHTML = '<div class="loading">Carregando...</div>';
+  apiFetch('/admin/cron')
+    .then(function(d){
+      cronJobs = d.jobs || [];
+      renderCrons(cronJobs);
+    })
+    .catch(function(){
+      var c2 = document.getElementById('ct');
+      if(c2) c2.innerHTML = '<div class="loading">Erro ao carregar.</div>';
+    });
+}
+
+function renderCrons(jobs){
+  var h = '';
+  h += '<div style="padding:28px 0 12px;text-align:center" class="fa fa-d1">';
+  h += '<div style="font-size:.58rem;letter-spacing:.38em;text-transform:uppercase;color:var(--acc)">Hor\xE1rios Autom\xE1ticos</div>';
+  h += '<div style="font-size:.75rem;color:var(--mut);margin-top:6px;letter-spacing:.04em">Mudan\xE7as entram em vigor em at\xE9 60 segundos</div>';
+  h += '</div>';
+  h += '<div class="cron-list fa fa-d2">';
+  for(var i = 0; i < jobs.length; i++){
+    var j = jobs[i];
+    var jn = j.job_name;
+    var exprs = j.cron_expressions || [];
+    var timesStr = exprs.length === 0 ? 'Sem hor\xE1rios configurados' : exprs.map(fmtExpr).join('  \xB7  ');
+    var lastStr = fmtLast(j);
+    var lbl = JOB_LABELS[jn] || jn;
+    var togChk = j.enabled ? ' checked' : '';
+    var disCls = j.enabled ? '' : ' cron-disabled';
+    h += '<div class="cron-card' + disCls + '">';
+    h += '<div class="cron-card-hdr">';
+    h += '<span class="cron-name">' + esc(lbl) + '</span>';
+    h += '<label class="toggle" title="' + (j.enabled ? 'Pausar job' : 'Reativar job') + '">';
+    h += '<input type="checkbox"' + togChk + ' onchange="toggleJob(this.dataset.job,this.checked)" data-job="' + esc(jn) + '">';
+    h += '<span class="toggle-sl"></span>';
+    h += '</label>';
+    h += '</div>';
+    h += '<div class="cron-desc">' + esc(j.descricao || '') + '</div>';
+    h += '<div class="cron-times">' + esc(timesStr) + '</div>';
+    h += '<div class="cron-last">' + esc(lastStr) + '</div>';
+    h += '<div class="cron-actions">';
+    h += '<button type="button" class="btn-edit" onclick="openModal(this.dataset.job)" data-job="' + esc(jn) + '">Editar hor\xE1rios</button>';
+    h += '</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div class="ftr">';
+  h += '<button class="btn-rf" onclick="loadCrons()">&#x21BB; Atualizar</button>';
+  h += '<span class="ftr-time">Atualizado \xE0s ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + '</span>';
+  h += '</div>';
+  var ct = document.getElementById('ct');
+  if(ct) ct.innerHTML = h;
+}
+
+function toggleJob(jobName, enabled){
+  apiPatch('/admin/cron/' + jobName, {enabled: enabled})
+    .then(function(){
+      showToast(enabled ? 'Job reativado' : 'Job pausado');
+      for(var i = 0; i < cronJobs.length; i++){
+        if(cronJobs[i].job_name === jobName){ cronJobs[i].enabled = enabled; break; }
+      }
+    })
+    .catch(function(){
+      showToast('Erro ao salvar');
+      loadCrons();
+    });
+}
+
+function openModal(jobName){
+  var job = null;
+  for(var i = 0; i < cronJobs.length; i++){
+    if(cronJobs[i].job_name === jobName){ job = cronJobs[i]; break; }
+  }
+  if(!job) return;
+  modalJob = jobName;
+  modalSlots = [];
+  var exprs = job.cron_expressions || [];
+  for(var j = 0; j < exprs.length; j++){ modalSlots.push(exprToUi(exprs[j])); }
+  if(modalSlots.length === 0) modalSlots.push({hr:'09', min:'00', dias:[]});
+  document.getElementById('modal-job-lbl').textContent = JOB_LABELS[jobName] || jobName;
+  document.getElementById('modal-err').textContent = '';
+  renderModalSlots();
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function closeModal(){
+  modalJob = null;
+  modalSlots = [];
+  document.getElementById('modal-bg').classList.remove('open');
+}
+
+function renderModalSlots(){
+  var h = '';
+  for(var i = 0; i < modalSlots.length; i++){
+    var s = modalSlots[i];
+    h += '<div class="time-row">';
+    h += '<input class="time-inp" type="text" maxlength="2" value="' + esc(s.hr) + '" oninput="updSlot(' + i + ',this)" data-field="hr" placeholder="HH">';
+    h += '<span class="time-sep">:</span>';
+    h += '<input class="time-inp" type="text" maxlength="2" value="' + esc(s.min) + '" oninput="updSlot(' + i + ',this)" data-field="min" placeholder="MM">';
+    h += '<div class="dias-sel">';
+    var todAct = s.dias.length === 0 ? ' active' : '';
+    h += '<button type="button" class="dia-btn' + todAct + '" onclick="setDias(' + i + ',null)">Todos</button>';
+    for(var d = 0; d < 7; d++){
+      var dAct = s.dias.indexOf(d) >= 0 ? ' active' : '';
+      h += '<button type="button" class="dia-btn' + dAct + '" onclick="setDias(' + i + ',' + d + ')">' + esc(DIAS_NOMES[d]) + '</button>';
+    }
+    h += '</div>';
+    if(modalSlots.length > 1){
+      h += '<button type="button" class="btn-rm" onclick="removeSlot(' + i + ')" title="Remover">\xD7</button>';
+    }
+    h += '</div>';
+  }
+  document.getElementById('modal-slots').innerHTML = h;
+}
+
+function updSlot(idx, input){
+  var field = input.getAttribute('data-field');
+  modalSlots[idx][field] = input.value.replace(/[^0-9]/g, '').slice(0, 2);
+}
+
+function setDias(idx, dia){
+  if(dia === null){
+    modalSlots[idx].dias = [];
+  } else {
+    var pos = modalSlots[idx].dias.indexOf(dia);
+    if(pos >= 0){ modalSlots[idx].dias.splice(pos, 1); }
+    else { modalSlots[idx].dias.push(dia); }
+  }
+  renderModalSlots();
+}
+
+function addSlot(){
+  modalSlots.push({hr:'09', min:'00', dias:[]});
+  renderModalSlots();
+}
+
+function removeSlot(idx){
+  modalSlots.splice(idx, 1);
+  renderModalSlots();
+}
+
+function validateSlots(){
+  if(modalSlots.length === 0) return 'Adicione pelo menos um hor\xE1rio';
+  for(var i = 0; i < modalSlots.length; i++){
+    var s = modalSlots[i];
+    var hr = parseInt(s.hr, 10);
+    var mn = parseInt(s.min, 10);
+    if(isNaN(hr) || hr < 0 || hr > 23) return 'Hora inv\xE1lida no hor\xE1rio ' + (i+1) + ' (00–23)';
+    if(isNaN(mn) || mn < 0 || mn > 59) return 'Minuto inv\xE1lido no hor\xE1rio ' + (i+1) + ' (00–59)';
+  }
+  return null;
+}
+
+function saveModal(){
+  var err = validateSlots();
+  if(err){ document.getElementById('modal-err').textContent = err; return; }
+  document.getElementById('modal-err').textContent = '';
+  var btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  var exprs = modalSlots.map(function(s){ return uiToExpr(s.hr, s.min, s.dias); });
+  apiPatch('/admin/cron/' + modalJob, {cron_expressions: exprs})
+    .then(function(){
+      btn.disabled = false;
+      closeModal();
+      showToast('Salvo. Novo hor\xE1rio ativo em at\xE9 60s');
+      loadCrons();
+    })
+    .catch(function(){
+      btn.disabled = false;
+      document.getElementById('modal-err').textContent = 'Erro ao salvar. Tente novamente.';
+    });
+}
+
+function showToast(msg){
+  var t = document.getElementById('toast-el');
+  if(!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
 
 function brl(n){ return 'R$ ' + Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmt(n){ return Number(n||0).toLocaleString('pt-BR'); }

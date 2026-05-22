@@ -24,6 +24,27 @@ vi.mock('../../src/jobs/relatorio-diario.js', () => ({
 	agregarEventos: (...args: unknown[]) => mockAgregarEventos(...args),
 }));
 
+const CRON_MOCK = [
+	{
+		job_name: 'lembrete',
+		enabled: true,
+		cron_expressions: ['0 9 * * *', '0 13 * * *', '0 18 * * *'],
+		descricao: 'Lembrete pra confirmar agendamento de amanhã',
+		ultima_execucao_em: null,
+		ultima_execucao_resultado: null,
+		atualizado_em: '2026-05-22T00:00:00Z',
+	},
+	{
+		job_name: 'enquete',
+		enabled: true,
+		cron_expressions: ['0 20 * * *'],
+		descricao: 'Enquete pós-atendimento',
+		ultima_execucao_em: null,
+		ultima_execucao_resultado: null,
+		atualizado_em: '2026-05-22T00:00:00Z',
+	},
+];
+
 const ERROS_MOCK = [
 	{
 		criado_em: '2026-05-21T14:00:00Z',
@@ -41,6 +62,8 @@ function makePostgres() {
 		listWebhookInbound: vi.fn().mockResolvedValue([]),
 		listSessionsSemResposta: vi.fn().mockResolvedValue([]),
 		loadRecentMessages: vi.fn().mockResolvedValue([]),
+		listCronJobs: vi.fn().mockResolvedValue(CRON_MOCK),
+		updateCronJob: vi.fn().mockResolvedValue(undefined),
 	};
 }
 
@@ -72,6 +95,14 @@ async function getAdmin(app: Hono, path: string, authHeader?: string) {
 	const headers: Record<string, string> = {};
 	if (authHeader) headers.Authorization = authHeader;
 	return app.request(path, { method: 'GET', headers });
+}
+
+async function patchAdmin(app: Hono, path: string, body: unknown) {
+	return app.request(path, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
 }
 
 describe('GET /admin/erros — auth', () => {
@@ -159,5 +190,68 @@ describe('GET /admin/relatorio — content', () => {
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
 		expect(body.periodo).toBe('mes');
+	});
+});
+
+describe('GET /admin/cron', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('returns 200 with jobs list', async () => {
+		const { app } = makeApp();
+		const res = await getAdmin(app, '/admin/cron');
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { total: number; jobs: unknown[] };
+		expect(body.total).toBe(2);
+		expect(body.jobs).toHaveLength(2);
+	});
+
+	it('job entries have expected fields', async () => {
+		const { app } = makeApp();
+		const res = await getAdmin(app, '/admin/cron');
+		const body = (await res.json()) as { jobs: Array<Record<string, unknown>> };
+		const lembrete = body.jobs.find((j) => j.job_name === 'lembrete');
+		expect(lembrete).toBeDefined();
+		expect(lembrete?.enabled).toBe(true);
+		expect(Array.isArray(lembrete?.cron_expressions)).toBe(true);
+	});
+});
+
+describe('PATCH /admin/cron/:job_name', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('returns 200 and calls updateCronJob when disabling', async () => {
+		const { app, deps } = makeApp();
+		const res = await patchAdmin(app, '/admin/cron/lembrete', { enabled: false });
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { status: string };
+		expect(body.status).toBe('ok');
+		expect(deps.postgres.updateCronJob).toHaveBeenCalledWith('lembrete', { enabled: false });
+	});
+
+	it('returns 200 and calls updateCronJob when updating expressions', async () => {
+		const { app, deps } = makeApp();
+		const res = await patchAdmin(app, '/admin/cron/lembrete', { cron_expressions: ['0 10 * * *'] });
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { status: string };
+		expect(body.status).toBe('ok');
+		expect(deps.postgres.updateCronJob).toHaveBeenCalledWith('lembrete', {
+			cron_expressions: ['0 10 * * *'],
+		});
+	});
+
+	it('returns 404 for unknown job', async () => {
+		const { app } = makeApp();
+		const res = await patchAdmin(app, '/admin/cron/jobinexistente', { enabled: false });
+		expect(res.status).toBe(404);
+		const body = (await res.json()) as { status: string };
+		expect(body.status).toBe('erro');
+	});
+
+	it('returns 400 for invalid cron expression', async () => {
+		const { app } = makeApp();
+		const res = await patchAdmin(app, '/admin/cron/lembrete', { cron_expressions: ['not-a-cron'] });
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { status: string };
+		expect(body.status).toBe('erro');
 	});
 });

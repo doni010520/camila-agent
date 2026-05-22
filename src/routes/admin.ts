@@ -324,35 +324,6 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		}
 	});
 
-	/** Lista configuração dos cron jobs (lembrete, enquete, sync_clientes). */
-	router.get('/admin/cron', async (c) => {
-		const jobs = await deps.postgres.listCronJobs();
-		return c.json({ total: jobs.length, jobs });
-	});
-
-	/**
-	 * Atualiza um job. Body: { enabled?: boolean, cron_expressions?: string[], descricao?: string }
-	 * O scheduler em memória re-le a config a cada 60s e aplica mudanças sem deploy.
-	 */
-	router.patch('/admin/cron/:job', async (c) => {
-		const job = c.req.param('job');
-		const body = (await c.req.json().catch(() => null)) as
-			| { enabled?: boolean; cron_expressions?: string[]; descricao?: string }
-			| null;
-		if (!body) return c.json({ status: 'erro', razao: 'body inválido' }, 400);
-		try {
-			await deps.postgres.updateCronJob(job, body);
-			const jobs = await deps.postgres.listCronJobs();
-			const atualizado = jobs.find((j) => j.job_name === job);
-			return c.json({ status: 'ok', job: atualizado });
-		} catch (err) {
-			return c.json(
-				{ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' },
-				500,
-			);
-		}
-	});
-
 	/** Lista todos os serviços do catálogo (cache Supabase). */
 	router.get('/admin/servicos', async (c) => {
 		const { data, error } = await deps.supabase.raw
@@ -375,6 +346,54 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 			.limit(limit);
 		if (error) return c.json({ status: 'erro', razao: error.message }, 500);
 		return c.json({ total: data?.length ?? 0, erros: data ?? [] });
+	});
+
+	// ── Cron job config ──────────────────────────────────────────────────────
+
+	/** Lista todos os jobs com config e última execução. */
+	router.get('/admin/cron', async (c) => {
+		const jobs = await deps.postgres.listCronJobs();
+		return c.json({ total: jobs.length, jobs });
+	});
+
+	const CRON_EXPR_RE = /^[0-9*,]+ [0-9*,]+ \* \* [0-9*,]+$/;
+
+	/**
+	 * Atualiza enabled e/ou cron_expressions de um job.
+	 * O scheduler re-carrega a cada 60s — mudanças entram em vigor sem deploy.
+	 */
+	router.patch('/admin/cron/:job_name', async (c) => {
+		const jobName = c.req.param('job_name');
+
+		let body: Record<string, unknown>;
+		try {
+			body = await c.req.json();
+		} catch {
+			return c.json({ status: 'erro', razao: 'corpo JSON inválido' }, 400);
+		}
+
+		const jobs = await deps.postgres.listCronJobs();
+		const job = jobs.find((j) => j.job_name === jobName);
+		if (!job) return c.json({ status: 'erro', razao: 'job não encontrado' }, 404);
+
+		const patch: { enabled?: boolean; cron_expressions?: string[] } = {};
+		if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
+		if (Array.isArray(body.cron_expressions)) {
+			for (const expr of body.cron_expressions as string[]) {
+				if (!CRON_EXPR_RE.test(String(expr))) {
+					return c.json({ status: 'erro', razao: `cron expression inválida: ${expr}` }, 400);
+				}
+			}
+			patch.cron_expressions = body.cron_expressions as string[];
+		}
+		if (Object.keys(patch).length === 0) {
+			return c.json({ status: 'erro', razao: 'nada para atualizar' }, 400);
+		}
+
+		await deps.postgres.updateCronJob(jobName, patch);
+		const updated = await deps.postgres.listCronJobs();
+		const updatedJob = updated.find((j) => j.job_name === jobName);
+		return c.json({ status: 'ok', job: updatedJob });
 	});
 
 	return router;
