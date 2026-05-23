@@ -109,6 +109,32 @@ export class LeadManager {
 		return next;
 	}
 
+	/**
+	 * Marks that a human (Camila, team) typed manually in the conversation.
+	 * Helena stays silent for INTERVENCAO_TTL_MIN minutes from this timestamp.
+	 */
+	async setIntervencaoHumana(telefone: string): Promise<void> {
+		const lead = await this.getLead(telefone);
+		if (!lead) return; // unknown lead — nothing to mark
+		const meta = { ...(lead.metadata ?? {}) } as Record<string, unknown>;
+		meta.intervencao_humana_em = new Date().toISOString();
+		await this.updateLead(telefone, { metadata: meta as LeadCamilaRow['metadata'] });
+		this.log.info({ telefone: telefone.slice(-8) }, 'Intervenção humana registrada');
+	}
+
+	/**
+	 * Returns minutes elapsed since the last human intervention,
+	 * or null if there has never been one (Helena proceeds normally).
+	 */
+	minutosDesdeIntervencao(lead: LeadCamilaRow): number | null {
+		const meta = (lead.metadata ?? {}) as Record<string, unknown>;
+		const ts = typeof meta.intervencao_humana_em === 'string' ? meta.intervencao_humana_em : null;
+		if (!ts) return null;
+		const ms = Date.now() - new Date(ts).getTime();
+		if (!Number.isFinite(ms) || ms < 0) return null;
+		return ms / (1000 * 60);
+	}
+
 	async setIaAtiva(telefone: string, active: boolean): Promise<void> {
 		// ia_on_off is TEXT 'on'/'off' (legacy n8n format), not boolean.
 		// Quando desativa, registra timestamp em metadata.ia_off_since pra TTL automático.
