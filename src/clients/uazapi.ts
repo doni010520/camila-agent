@@ -27,6 +27,7 @@ export const uazapiMessageContentSchema = z
 export const uazapiMessageSchema = z
 	.object({
 		chatid: z.string(),
+		messageid: z.string().optional().default(''),
 		text: z.string().optional().default(''),
 		messageType: uazapiMessageTypeSchema,
 		wasSentByApi: z.boolean().optional().default(false),
@@ -221,7 +222,96 @@ export class UazapiClient {
 		this.log.info({ number: opts.number.slice(-8) }, 'PIX button sent');
 	}
 
-	// ── Fetch media binary (from UAZAPI CDN URL in content.URL) ──
+	// ═══════════════════════════════════════════════════════════════
+	// Media download via UAZAPI API (descriptografa automaticamente)
+	// Endpoint: POST /message/download  — baseado no fp-solar-agent
+	// ═══════════════════════════════════════════════════════════════
+
+	/**
+	 * Baixa mídia via UAZAPI API (descriptografa automaticamente).
+	 * Retorna { fileURL, mimetype, base64Data } dependendo dos flags.
+	 */
+	async downloadMedia(opts: {
+		messageId: string;
+		returnLink?: boolean;
+		returnBase64?: boolean;
+		transcribe?: boolean;
+		generateMp3?: boolean;
+	}): Promise<Record<string, unknown> | null> {
+		const payload: Record<string, unknown> = {
+			id: opts.messageId,
+			return_link: opts.returnLink ?? true,
+			return_base64: opts.returnBase64 ?? false,
+			transcribe: opts.transcribe ?? false,
+			generate_mp3: opts.generateMp3 ?? false,
+		};
+
+		const url = `${this.baseUrl}/message/download`;
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/json',
+				token: this.token,
+			},
+			body: JSON.stringify(payload),
+		});
+
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			this.log.error({ path: '/message/download', status: res.status, body: text.slice(0, 200) }, 'UAZAPI download failed');
+			return null;
+		}
+
+		return (await res.json().catch(() => null)) as Record<string, unknown> | null;
+	}
+
+	/**
+	 * Retorna URL descriptografada da mídia (servida pelo UAZAPI).
+	 * Essa URL é pública e pode ser passada diretamente pro OpenAI Vision.
+	 */
+	async getMediaUrl(messageId: string): Promise<string | null> {
+		const result = await this.downloadMedia({ messageId, returnLink: true, returnBase64: false });
+		if (result?.fileURL && typeof result.fileURL === 'string') return result.fileURL;
+		this.log.warn({ messageId, resultKeys: result ? Object.keys(result) : [] }, 'getMediaUrl: no fileURL in response');
+		return null;
+	}
+
+	/**
+	 * Baixa bytes da mídia descriptografada. Usa getMediaUrl internamente.
+	 * Fallback: tenta base64 direto do UAZAPI.
+	 */
+	async fetchMediaByMessageId(messageId: string): Promise<{ bytes: Uint8Array; mimetype: string }> {
+		// 1. Tenta via URL (mais eficiente)
+		const result = await this.downloadMedia({ messageId, returnLink: true, returnBase64: false });
+		const fileURL = typeof result?.fileURL === 'string' ? result.fileURL : null;
+		const mimetype = typeof result?.mimetype === 'string' ? result.mimetype : 'application/octet-stream';
+
+		if (fileURL) {
+			const res = await fetch(fileURL);
+			if (res.ok) {
+				this.log.debug({ messageId, mimetype, size: 'streaming' }, 'Media fetched via UAZAPI fileURL');
+				return { bytes: new Uint8Array(await res.arrayBuffer()), mimetype };
+			}
+			this.log.warn({ messageId, status: res.status }, 'fileURL fetch failed, trying base64');
+		}
+
+		// 2. Fallback: base64 direto
+		const b64result = await this.downloadMedia({ messageId, returnBase64: true, returnLink: false });
+		const base64Data = typeof b64result?.base64Data === 'string' ? b64result.base64Data : null;
+		const mime2 = typeof b64result?.mimetype === 'string' ? b64result.mimetype : mimetype;
+
+		if (base64Data) {
+			this.log.debug({ messageId, mimetype: mime2 }, 'Media fetched via UAZAPI base64');
+			return { bytes: Uint8Array.from(Buffer.from(base64Data, 'base64')), mimetype: mime2 };
+		}
+
+		throw new UazapiError(`Could not download media for messageId=${messageId}`, 502);
+	}
+
+	/**
+	 * Fetch media por URL direta (legado — usado por validar_comprovante com URLs já descriptografadas).
+	 */
 	async fetchMedia(mediaUrl: string): Promise<Uint8Array> {
 		const res = await fetch(mediaUrl);
 		if (!res.ok) throw new UazapiError(`Failed to download media: ${res.status}`, 502);
