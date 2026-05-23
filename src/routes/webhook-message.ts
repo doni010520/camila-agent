@@ -29,33 +29,6 @@ export interface WebhookDeps {
 const TEXT_TYPES = new Set(['conversation', 'extendedTextMessage', 'ephemeralMessage']);
 const MEDIA_TYPES = new Set(['audioMessage', 'imageMessage', 'documentMessage']);
 
-/**
- * Extrai URL da mídia do content do UAZAPI.
- * UAZAPI manda URL em posições diferentes conforme a versão:
- *   - content.URL  (uppercase — formato antigo, documentado)
- *   - content.url  (lowercase — observado em produção)
- *   - content.<messageType>.url  (nested dentro do tipo — ex: content.imageMessage.url)
- *   - content (string) — já normalizado antes, mas se escapar chega aqui
- */
-function extractMediaUrl(content: unknown, messageType: string): string | undefined {
-	if (!content || typeof content !== 'object') return undefined;
-	const c = content as Record<string, unknown>;
-
-	// 1. Campo direto: URL ou url
-	if (typeof c.URL === 'string' && c.URL) return c.URL;
-	if (typeof c.url === 'string' && c.url) return c.url;
-
-	// 2. Nested dentro do messageType (ex: content.imageMessage.url)
-	const nested = c[messageType];
-	if (nested && typeof nested === 'object') {
-		const n = nested as Record<string, unknown>;
-		if (typeof n.URL === 'string' && n.URL) return n.URL;
-		if (typeof n.url === 'string' && n.url) return n.url;
-	}
-
-	return undefined;
-}
-
 export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 	const router = new Hono();
 	const memory = new ChatMemory(deps.postgres);
@@ -127,15 +100,9 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			msgObj.messageType = msgObj.messageType.charAt(0).toLowerCase() + msgObj.messageType.slice(1);
 		}
 		// UAZAPI manda `content` como string OU objeto. Schema atual aceita só objeto.
-		// Para mídia, a string pode ser a própria URL → preserva como {URL: valor}.
-		// Para texto puro, descarta pra não quebrar o schema.
+		// Se vier string, descartamos pra não quebrar — texto já está em `text`.
 		if (typeof msgObj.content === 'string') {
-			const mt = typeof msgObj.messageType === 'string' ? msgObj.messageType.toLowerCase() : '';
-			if (msgObj.content && (mt.includes('image') || mt.includes('audio') || mt.includes('document'))) {
-				msgObj.content = { URL: msgObj.content };
-			} else {
-				delete msgObj.content;
-			}
+			delete msgObj.content;
 		}
 		const normalized = { body: { chat: innerBody.chat, message: msgObj, token: innerBody.token } };
 
@@ -261,24 +228,18 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		let text = message.text ?? '';
 
 		if (MEDIA_TYPES.has(message.messageType)) {
-			const mediaUrl = extractMediaUrl(message.content, message.messageType);
-			if (mediaUrl) {
+			const messageId = message.messageid;
+			if (messageId) {
 				try {
-					text = await mediaRouter.process(message.messageType, mediaUrl);
+					const result = await mediaRouter.process(message.messageType, messageId);
+					text = result.text;
 				} catch (err) {
-					log.error({ err, messageType: message.messageType, mediaUrl: mediaUrl.slice(0, 80) }, 'Media processing failed');
+					log.error({ err, messageType: message.messageType, messageId }, 'Media processing failed');
 					text = `[Mídia recebida: ${message.messageType}]`;
 				}
 			} else {
-				// Log content keys pra diagnóstico — sem logar valores (pode ter base64)
-				const contentKeys = message.content && typeof message.content === 'object'
-					? Object.keys(message.content as Record<string, unknown>)
-					: ['(empty)'];
-				log.warn(
-					{ messageType: message.messageType, contentKeys },
-					'Media message sem URL no content — verificar formato UAZAPI',
-				);
-				text = `[Mídia recebida sem URL: ${message.messageType}]`;
+				log.warn({ messageType: message.messageType }, 'Media message sem messageid — não é possível baixar');
+				text = `[Mídia recebida sem messageid: ${message.messageType}]`;
 			}
 		} else if (!TEXT_TYPES.has(message.messageType)) {
 			text = `[Mensagem do tipo ${message.messageType} recebida]`;
