@@ -1,3 +1,12 @@
+/**
+ * Converte mídia recebida no WhatsApp em texto para o LLM.
+ *
+ * Usa POST /message/download do UAZAPI para descriptografar a mídia
+ * (CDN do WhatsApp retorna blobs criptografados que OpenAI rejeita).
+ *
+ * Baseado no fp-solar-agent (doni010520/fp-solar-agent).
+ */
+
 import type { AppOpenAIClient } from '../clients/openai.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import type { Logger } from '../infra/logger.js';
@@ -9,6 +18,13 @@ export interface MediaRouterDeps {
 	openai: AppOpenAIClient;
 	uazapi: UazapiClient;
 	logger?: Logger;
+}
+
+export interface MediaResult {
+	/** Texto para injetar no debounce buffer / prompt do agente */
+	text: string;
+	/** URL descriptografada da mídia (usável por tools como validar_comprovante) */
+	mediaUrl?: string;
 }
 
 /**
@@ -29,59 +45,141 @@ export class MediaRouter {
 	/**
 	 * Route media to appropriate handler and return text representation.
 	 * @param messageType - UAZAPI messageType (audioMessage, imageMessage, documentMessage)
-	 * @param mediaUrl - content.URL from webhook
-	 * @returns text to inject into debounce buffer
+	 * @param messageId - messageid do webhook UAZAPI (usado pra baixar via /message/download)
+	 * @returns MediaResult com texto e URL descriptografada (quando disponível)
 	 */
-	async process(messageType: string, mediaUrl: string): Promise<string> {
+	async process(messageType: string, messageId: string): Promise<MediaResult> {
 		switch (messageType) {
 			case 'audioMessage':
-				return this.handleAudio(mediaUrl);
+				return this.handleAudio(messageId);
 			case 'imageMessage':
-				return this.handleImage(mediaUrl);
+				return this.handleImage(messageId);
 			case 'documentMessage':
-				return this.handleDocument(mediaUrl);
+				return this.handleDocument(messageId);
 			default:
 				this.log.warn({ messageType }, 'Unsupported media type');
-				return `[Mídia do tipo ${messageType} recebida — não processada]`;
+				return { text: `[Mídia do tipo ${messageType} recebida — não processada]` };
 		}
 	}
 
-	private async handleAudio(mediaUrl: string): Promise<string> {
-		this.log.debug({ mediaUrl: mediaUrl.slice(0, 50) }, 'Processing audio');
-		const buffer = await this.uazapi.fetchMedia(mediaUrl);
-		const result = await this.openai.transcribe(buffer, 'audio/ogg');
-		this.log.info({ textLength: result.text.length }, 'Audio transcribed');
-		return `[Áudio transcrito]: ${result.text}`;
-	}
+	private async handleAudio(messageId: string): Promise<MediaResult> {
+		this.log.debug({ messageId }, 'Processing audio');
 
-	private async handleImage(mediaUrl: string): Promise<string> {
-		this.log.debug({ mediaUrl: mediaUrl.slice(0, 50) }, 'Processing image');
-		const buffer = await this.uazapi.fetchMedia(mediaUrl);
-		const base64 = Buffer.from(buffer).toString('base64');
-		const result = await this.openai.analyzeImage(
-			base64,
-			'Descreva brevemente esta imagem em português. Se for um comprovante PIX, extraia: valor, destinatário, chave, status.',
-		);
-		this.log.info({ textLength: result.text.length }, 'Image described');
-		return `[Imagem recebida]: ${result.text}`;
-	}
+		let audioBytes: Uint8Array | null = null;
+		let mimetype = 'audio/ogg';
 
-	private async handleDocument(mediaUrl: string): Promise<string> {
-		this.log.debug({ mediaUrl: mediaUrl.slice(0, 50) }, 'Processing document');
+		// 1. Tenta via UAZAPI download API (descriptografa automaticamente)
 		try {
-			const buffer = await this.uazapi.fetchMedia(mediaUrl);
+			const result = await this.uazapi.downloadMedia({
+				messageId,
+				returnLink: true,
+				returnBase64: false,
+				generateMp3: false, // OGG é o formato nativo do WhatsApp
+			});
+			if (result) {
+				const fileURL = typeof result.fileURL === 'string' ? result.fileURL : null;
+				mimetype = typeof result.mimetype === 'string' ? result.mimetype : mimetype;
+
+				if (fileURL) {
+					const res = await fetch(fileURL);
+					if (res.ok) {
+						audioBytes = new Uint8Array(await res.arrayBuffer());
+						this.log.debug({ size: audioBytes.length, mimetype }, 'Audio downloaded via fileURL');
+					}
+				}
+			}
+		} catch (err) {
+			this.log.error({ err: err instanceof Error ? err.message : err }, 'download_media raised');
+		}
+
+		// 2. Fallback: base64 direto
+		if (!audioBytes) {
+			try {
+				const result = await this.uazapi.downloadMedia({
+					messageId,
+					returnBase64: true,
+					returnLink: false,
+				});
+				const b64 = typeof result?.base64Data === 'string' ? result.base64Data : null;
+				if (b64) {
+					audioBytes = Uint8Array.from(Buffer.from(b64, 'base64'));
+					mimetype = typeof result?.mimetype === 'string' ? result.mimetype : mimetype;
+					this.log.debug({ size: audioBytes.length }, 'Audio obtained via base64 fallback');
+				}
+			} catch (err) {
+				this.log.error({ err: err instanceof Error ? err.message : err }, 'base64 fallback raised');
+			}
+		}
+
+		if (!audioBytes) {
+			return { text: '[áudio recebido, mas não foi possível baixar]' };
+		}
+
+		// Extensão coerente com mimetype pro Whisper aceitar
+		let ext = 'ogg';
+		if (mimetype.includes('mp3') || mimetype.includes('mpeg')) ext = 'mp3';
+		else if (mimetype.includes('wav')) ext = 'wav';
+		else if (mimetype.includes('m4a') || mimetype.includes('mp4')) ext = 'm4a';
+		else if (mimetype.includes('webm')) ext = 'webm';
+
+		try {
+			const mimeForWhisper = `audio/${ext === 'm4a' ? 'mp4' : ext}`;
+			const result = await this.openai.transcribe(audioBytes, mimeForWhisper);
+			this.log.info({ textLength: result.text.length }, 'Audio transcribed');
+			if (!result.text.trim()) return { text: '[áudio recebido, mas a transcrição veio vazia]' };
+			return { text: `[Áudio transcrito]: ${result.text}` };
+		} catch (err) {
+			this.log.error({ err: err instanceof Error ? err.message : err, mimetype, ext }, 'Whisper failed');
+			return { text: '[áudio recebido, mas não foi possível transcrever]' };
+		}
+	}
+
+	private async handleImage(messageId: string): Promise<MediaResult> {
+		this.log.debug({ messageId }, 'Processing image');
+
+		// Pega URL descriptografada do UAZAPI (igual ao fp-solar-agent)
+		const mediaUrl = await this.uazapi.getMediaUrl(messageId);
+		if (!mediaUrl) {
+			return { text: '[imagem recebida, mas não foi possível acessar]' };
+		}
+
+		try {
+			// Passa URL direta pro OpenAI Vision (não precisa base64)
+			const result = await this.openai.analyzeImage(
+				mediaUrl,
+				'Descreva brevemente esta imagem em português. Se for um comprovante PIX, extraia: valor, destinatário, chave, status.',
+				'url', // flag pra usar URL direta
+			);
+			this.log.info({ textLength: result.text.length }, 'Image described');
+			return {
+				text: `[Imagem recebida | media_url=${mediaUrl}]: ${result.text}`,
+				mediaUrl,
+			};
+		} catch (err) {
+			this.log.error({ err: err instanceof Error ? err.message : err, mediaUrl: mediaUrl.slice(0, 80) }, 'Vision failed');
+			return {
+				text: '[imagem recebida, mas não foi possível analisar]',
+				mediaUrl,
+			};
+		}
+	}
+
+	private async handleDocument(messageId: string): Promise<MediaResult> {
+		this.log.debug({ messageId }, 'Processing document');
+		try {
+			const { bytes } = await this.uazapi.fetchMediaByMessageId(messageId);
 			// Dynamic import to avoid bundling pdf-parse when not needed
 			const pdfParse = (await import('pdf-parse')).default;
-			const parsed = await pdfParse(Buffer.from(buffer));
+			const parsed = await pdfParse(Buffer.from(bytes));
 			const text = parsed.text.slice(0, MAX_PDF_CHARS);
 			this.log.info(
 				{ textLength: text.length, truncated: parsed.text.length > MAX_PDF_CHARS },
 				'PDF extracted',
 			);
-			return `[PDF recebido]: ${text}`;
+			return { text: `[PDF recebido]: ${text}` };
 		} catch (err) {
-			this.log.error({ err }, 'Failed to parse PDF');
-			return '[PDF recebido mas não foi possível extrair o texto]';
+			this.log.error({ err: err instanceof Error ? err.message : err }, 'Failed to parse PDF');
+			return { text: '[PDF recebido mas não foi possível extrair o texto]' };
 		}
 	}
 }
