@@ -198,7 +198,7 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		// ── Humano digitando pela conta business (fromMe=true, wasSentByApi=false) ──
 		// Registra intervenção humana → Helena fica calada por 30 min.
 		if (message.fromMe) {
-			await leadManager.setIntervencaoHumana(telefone).catch((err) =>
+			await leadManager.setIntervencaoHumana(telefone).catch((err: unknown) =>
 				log.warn({ err }, 'setIntervencaoHumana failed — non-blocking'),
 			);
 			return c.json({ status: 'ok', ignored: 'intervencao_humana' });
