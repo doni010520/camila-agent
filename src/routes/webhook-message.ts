@@ -29,6 +29,33 @@ export interface WebhookDeps {
 const TEXT_TYPES = new Set(['conversation', 'extendedTextMessage', 'ephemeralMessage']);
 const MEDIA_TYPES = new Set(['audioMessage', 'imageMessage', 'documentMessage']);
 
+/**
+ * Extrai URL da mídia do content do UAZAPI.
+ * UAZAPI manda URL em posições diferentes conforme a versão:
+ *   - content.URL  (uppercase — formato antigo, documentado)
+ *   - content.url  (lowercase — observado em produção)
+ *   - content.<messageType>.url  (nested dentro do tipo — ex: content.imageMessage.url)
+ *   - content (string) — já normalizado antes, mas se escapar chega aqui
+ */
+function extractMediaUrl(content: unknown, messageType: string): string | undefined {
+	if (!content || typeof content !== 'object') return undefined;
+	const c = content as Record<string, unknown>;
+
+	// 1. Campo direto: URL ou url
+	if (typeof c.URL === 'string' && c.URL) return c.URL;
+	if (typeof c.url === 'string' && c.url) return c.url;
+
+	// 2. Nested dentro do messageType (ex: content.imageMessage.url)
+	const nested = c[messageType];
+	if (nested && typeof nested === 'object') {
+		const n = nested as Record<string, unknown>;
+		if (typeof n.URL === 'string' && n.URL) return n.URL;
+		if (typeof n.url === 'string' && n.url) return n.url;
+	}
+
+	return undefined;
+}
+
 export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 	const router = new Hono();
 	const memory = new ChatMemory(deps.postgres);
@@ -100,9 +127,15 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			msgObj.messageType = msgObj.messageType.charAt(0).toLowerCase() + msgObj.messageType.slice(1);
 		}
 		// UAZAPI manda `content` como string OU objeto. Schema atual aceita só objeto.
-		// Se vier string, descartamos pra não quebrar — texto já está em `text`.
+		// Para mídia, a string pode ser a própria URL → preserva como {URL: valor}.
+		// Para texto puro, descarta pra não quebrar o schema.
 		if (typeof msgObj.content === 'string') {
-			delete msgObj.content;
+			const mt = typeof msgObj.messageType === 'string' ? msgObj.messageType.toLowerCase() : '';
+			if (msgObj.content && (mt.includes('image') || mt.includes('audio') || mt.includes('document'))) {
+				msgObj.content = { URL: msgObj.content };
+			} else {
+				delete msgObj.content;
+			}
 		}
 		const normalized = { body: { chat: innerBody.chat, message: msgObj, token: innerBody.token } };
 
@@ -150,8 +183,8 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 				? (chat.wa_label[0] as string)
 				: undefined;
 
-		// Ignore messages sent by the API itself (avoid loops)
-		if (message.fromMe || message.wasSentByApi) {
+		// ── Mensagens enviadas pela própria API (loop da Helena) → ignora cedo, sem DB ──
+		if (message.wasSentByApi) {
 			return c.json({ status: 'ok', ignored: 'fromMe' });
 		}
 
@@ -161,6 +194,15 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		}
 
 		const log = createRequestLogger(telefone);
+
+		// ── Humano digitando pela conta business (fromMe=true, wasSentByApi=false) ──
+		// Registra intervenção humana → Helena fica calada por 30 min.
+		if (message.fromMe) {
+			await leadManager.setIntervencaoHumana(telefone).catch((err) =>
+				log.warn({ err }, 'setIntervencaoHumana failed — non-blocking'),
+			);
+			return c.json({ status: 'ok', ignored: 'intervencao_humana' });
+		}
 
 		// Check if this is a button click (same endpoint, routed by buttonOrListid)
 		if (isButtonClick(message)) {
@@ -198,22 +240,44 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			}
 		}
 
+		// ── Intervenção humana recente → Helena fica calada por 30 min ──
+		// Comandos #reset/#ia-on continuam funcionando como escape hatch de debug.
+		const INTERVENCAO_TTL_MIN = 30;
+		const minutosIntervencao = leadManager.minutosDesdeIntervencao(lead);
+		if (!isCommand && minutosIntervencao !== null && minutosIntervencao < INTERVENCAO_TTL_MIN) {
+			const restante = Math.ceil(INTERVENCAO_TTL_MIN - minutosIntervencao);
+			log.info(
+				{ minutosDesdeIntervencao: Math.round(minutosIntervencao), restante },
+				'Helena pausada por intervenção humana recente',
+			);
+			return c.json({
+				status: 'ok',
+				ignored: 'intervencao_humana_recente',
+				minutos_restantes: restante,
+			});
+		}
+
 		// Route by message type
 		let text = message.text ?? '';
 
 		if (MEDIA_TYPES.has(message.messageType)) {
-			const mediaContent = (message.content && typeof message.content === 'object'
-				? (message.content as { URL?: unknown })
-				: undefined);
-			const mediaUrl = typeof mediaContent?.URL === 'string' ? mediaContent.URL : undefined;
+			const mediaUrl = extractMediaUrl(message.content, message.messageType);
 			if (mediaUrl) {
 				try {
 					text = await mediaRouter.process(message.messageType, mediaUrl);
 				} catch (err) {
-					log.error({ err, messageType: message.messageType }, 'Media processing failed');
+					log.error({ err, messageType: message.messageType, mediaUrl: mediaUrl.slice(0, 80) }, 'Media processing failed');
 					text = `[Mídia recebida: ${message.messageType}]`;
 				}
 			} else {
+				// Log content keys pra diagnóstico — sem logar valores (pode ter base64)
+				const contentKeys = message.content && typeof message.content === 'object'
+					? Object.keys(message.content as Record<string, unknown>)
+					: ['(empty)'];
+				log.warn(
+					{ messageType: message.messageType, contentKeys },
+					'Media message sem URL no content — verificar formato UAZAPI',
+				);
 				text = `[Mídia recebida sem URL: ${message.messageType}]`;
 			}
 		} else if (!TEXT_TYPES.has(message.messageType)) {
