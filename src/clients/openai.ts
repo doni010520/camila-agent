@@ -117,12 +117,22 @@ export class AppOpenAIClient {
 
 	// ── Vision (image → structured text, used for PIX receipt OCR) ──
 
+	/**
+	 * Analisa imagem via OpenAI Vision.
+	 * @param imageSource - base64 da imagem OU URL direta (quando mimeType='url')
+	 * @param prompt - instrução pra o modelo
+	 * @param mimeType - 'image/jpeg', 'image/png', etc. ou 'url' para URL direta
+	 */
 	async analyzeImage(
-		imageBase64: string,
+		imageSource: string,
 		prompt: string,
 		mimeType = 'image/jpeg',
 	): Promise<VisionResult> {
-		this.log.debug({ model: this.modelVision, promptLength: prompt.length }, 'Vision request');
+		this.log.debug({ model: this.modelVision, promptLength: prompt.length, mode: mimeType === 'url' ? 'url' : 'base64' }, 'Vision request');
+
+		const imageUrl = mimeType === 'url'
+			? imageSource
+			: `data:${mimeType};base64,${imageSource}`;
 
 		const response = await this.client.chat.completions.create({
 			model: this.modelVision,
@@ -130,7 +140,7 @@ export class AppOpenAIClient {
 				{
 					role: 'user',
 					content: [
-						{ type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+						{ type: 'image_url', image_url: { url: imageUrl, detail: 'high' as const } },
 						{ type: 'text', text: prompt },
 					],
 				},
