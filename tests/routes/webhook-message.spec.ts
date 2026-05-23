@@ -14,6 +14,8 @@ const mockLeadManager = {
 	maybeAutoReactivate: vi.fn().mockResolvedValue(false),
 	setIaAtiva: vi.fn(),
 	setVip: vi.fn(),
+	setIntervencaoHumana: vi.fn().mockResolvedValue(undefined),
+	minutosDesdeIntervencao: vi.fn().mockReturnValue(null), // null = sem intervenção recente
 	getOrCreate: vi.fn().mockResolvedValue({
 		id: 'uuid',
 		telefone: '5571999999999',
@@ -33,7 +35,7 @@ vi.mock('../../src/domain/lead.js', () => ({
 	LeadManager: vi.fn().mockImplementation(() => mockLeadManager),
 }));
 
-const mockMediaRouter = { process: vi.fn().mockResolvedValue('[Áudio transcrito]: oi') };
+const mockMediaRouter = { process: vi.fn().mockResolvedValue({ text: '[Áudio transcrito]: oi' }) };
 vi.mock('../../src/domain/media-router.js', () => ({
 	MediaRouter: vi.fn().mockImplementation(() => mockMediaRouter),
 }));
@@ -95,6 +97,8 @@ describe('POST /webhook/uazapi/message', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Defaults restaurados a cada teste
+		mockLeadManager.minutosDesdeIntervencao.mockReturnValue(null);
 		mockLeadManager.getOrCreate.mockResolvedValue({
 			id: 'uuid',
 			telefone: '5571999999999',
@@ -120,19 +124,43 @@ describe('POST /webhook/uazapi/message', () => {
 		expect(mockDebouncer.push).toHaveBeenCalledWith('5571999999999', 'Quero agendar');
 	});
 
-	it('fromMe: true → 200 {ignored: "fromMe"}', async () => {
+	it('fromMe: true (humano digitando) → 200 {ignored: "intervencao_humana"}, setIntervencaoHumana chamado', async () => {
 		const res = await post(app, makePayload({ fromMe: true }));
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
-		expect(body.ignored).toBe('fromMe');
+		expect(body.ignored).toBe('intervencao_humana');
+		expect(mockLeadManager.setIntervencaoHumana).toHaveBeenCalledWith('5571999999999');
 		expect(mockDebouncer.push).not.toHaveBeenCalled();
 	});
 
-	it('wasSentByApi: true → 200 {ignored: "fromMe"}', async () => {
+	it('wasSentByApi: true (API da Helena) → 200 {ignored: "fromMe"}, sem DB', async () => {
 		const res = await post(app, makePayload({ wasSentByApi: true }));
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
 		expect(body.ignored).toBe('fromMe');
+		// Saída antecipada: nenhum acesso ao lead
+		expect(mockLeadManager.getOrCreate).not.toHaveBeenCalled();
+		expect(mockLeadManager.setIntervencaoHumana).not.toHaveBeenCalled();
+		expect(mockDebouncer.push).not.toHaveBeenCalled();
+	});
+
+	it('intervenção humana recente (15 min) → 200 {ignored: "intervencao_humana_recente"}, Helena calada', async () => {
+		mockLeadManager.minutosDesdeIntervencao.mockReturnValue(15);
+		const res = await post(app, makePayload());
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as Record<string, unknown>;
+		expect(body.ignored).toBe('intervencao_humana_recente');
+		expect(body.minutos_restantes).toBe(15); // ceil(30 - 15)
+		expect(mockDebouncer.push).not.toHaveBeenCalled();
+	});
+
+	it('intervenção antiga (31 min) → Helena volta a responder normalmente', async () => {
+		mockLeadManager.minutosDesdeIntervencao.mockReturnValue(31);
+		const res = await post(app, makePayload());
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as Record<string, unknown>;
+		expect(body.debounced).toBe(true);
+		expect(mockDebouncer.push).toHaveBeenCalledWith('5571999999999', 'Quero agendar');
 	});
 
 	it('invalid chatid → 200 {ignored: "invalid_phone"}', async () => {
@@ -176,10 +204,11 @@ describe('POST /webhook/uazapi/message', () => {
 		expect(mockHandleButton).toHaveBeenCalled();
 	});
 
-	it('imageMessage → mediaRouter.process called, text enters debouncer', async () => {
+	it('imageMessage → mediaRouter.process called with messageid, text enters debouncer', async () => {
 		const res = await post(
 			app,
 			makePayload({
+				messageid: 'msg-123-abc',
 				messageType: 'imageMessage',
 				text: '',
 				content: { URL: 'https://cdn.test/img.jpg' },
@@ -188,7 +217,7 @@ describe('POST /webhook/uazapi/message', () => {
 		expect(res.status).toBe(200);
 		expect(mockMediaRouter.process).toHaveBeenCalledWith(
 			'imageMessage',
-			'https://cdn.test/img.jpg',
+			'msg-123-abc',
 		);
 		expect(mockDebouncer.push).toHaveBeenCalledWith('5571999999999', '[Áudio transcrito]: oi');
 	});
