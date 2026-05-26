@@ -87,8 +87,11 @@ export function createCriarAgendamento(deps: {
 				}
 			}
 
-			// 3a. IDEMPOTENCY: check if cliente already has an active agendamento at this time
-			// Prevents duplicate creation when agent retries (e.g. after timezone mismatch in verify).
+			// 3a. IDEMPOTENCY + ANTI-DUPLICAÇÃO POR DIA
+			// (a) Mesmo horário e mesmo cliente -> retorna existente (idempotency)
+			// (b) MESMO DIA mas horário/serviço diferente -> recusa e força reagendar.
+			//     Sem isso, cliente que muda de ideia ("ah, prefiro 14h") gerava
+			//     duplicidade na agenda da profissional (caso Kezia 04/06: 3 ativos).
 			const dataDia = input.data_e_hora.substring(0, 10); // 'YYYY-MM-DD'
 			try {
 				const existing = await trinks.listAgendamentos({
@@ -96,11 +99,12 @@ export function createCriarAgendamento(deps: {
 					dataInicio: `${dataDia}T00:00:00`,
 					dataFim: `${dataDia}T23:59:59`,
 				});
-				const dup = existing.data?.find((a) => {
-					const sameHour = a.dataHoraInicio.substring(0, 16) === input.data_e_hora.substring(0, 16);
-					return sameHour && ACTIVE_STATUSES.has(a.status.id);
-				});
+				const ativos = (existing.data ?? []).filter((a) => ACTIVE_STATUSES.has(a.status.id));
+				const dup = ativos.find(
+					(a) => a.dataHoraInicio.substring(0, 16) === input.data_e_hora.substring(0, 16),
+				);
 				if (dup) {
+					// (a) idempotency — mesmo horário, retorna o existente
 					return {
 						status: 'ok',
 						agendamento_id: dup.id,
@@ -112,6 +116,22 @@ export function createCriarAgendamento(deps: {
 						valor: dup.valor ?? 0,
 						cliente_novo: false,
 						ja_existia: true,
+					};
+				}
+				if (ativos.length > 0) {
+					// (b) cliente já tem agendamento ativo nesse dia em horário DIFERENTE
+					// → assume que é remarcação. Recusa e instrui Helena a chamar reagendar.
+					return {
+						status: 'erro',
+						razao:
+							'Cliente já tem agendamento ativo neste dia. Use reagendar_agendamento passando o agendamento_id existente + nova_data_hora, em vez de criar_agendamento. Se a cliente realmente quer DOIS atendimentos no mesmo dia (raro), confirme explicitamente com ela antes.',
+						detalhes: {
+							existentes: ativos.map((a) => ({
+								id: a.id,
+								servico: a.servico.nome,
+								data_hora: a.dataHoraInicio,
+							})),
+						},
 					};
 				}
 			} catch {
