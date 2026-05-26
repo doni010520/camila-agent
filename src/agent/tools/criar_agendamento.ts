@@ -119,12 +119,12 @@ export function createCriarAgendamento(deps: {
 					};
 				}
 				if (ativos.length > 0) {
-					// (b) cliente já tem agendamento ativo nesse dia em horário DIFERENTE
-					// → assume que é remarcação. Recusa e instrui Helena a chamar reagendar.
+					// (b) Regra de negócio: cliente NUNCA faz 2 procedimentos de cílio
+					//     no mesmo dia. Se já existe ativo, é remarcação obrigatória.
 					return {
 						status: 'erro',
 						razao:
-							'Cliente já tem agendamento ativo neste dia. Use reagendar_agendamento passando o agendamento_id existente + nova_data_hora, em vez de criar_agendamento. Se a cliente realmente quer DOIS atendimentos no mesmo dia (raro), confirme explicitamente com ela antes.',
+							'Cliente já tem agendamento ativo neste dia — não é permitido marcar 2 procedimentos de cílio no mesmo dia. Chame reagendar_agendamento passando o agendamento_id existente abaixo + nova_data_hora.',
 						detalhes: {
 							existentes: ativos.map((a) => ({
 								id: a.id,
