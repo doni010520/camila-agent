@@ -338,6 +338,31 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		return c.json({ total: data?.length ?? 0, servicos: data ?? [] });
 	});
 
+	/**
+	 * Lista eventos brutos de um tipo (debug/auditoria). Retorna detalhes
+	 * completos incluindo args + result. Cliente NUNCA acessa.
+	 *   GET /admin/eventos-raw?tipo=agendamento_reagendado&n=30
+	 *   GET /admin/eventos-raw?telefone=557182404610&n=50
+	 */
+	router.get('/admin/eventos-raw', async (c) => {
+		const tipo = c.req.query('tipo');
+		const telefone = c.req.query('telefone');
+		const n = Number(c.req.query('n') ?? 50);
+		const limit = Number.isFinite(n) && n > 0 ? n : 50;
+
+		let q = deps.supabase.raw
+			.from('eventos_helena')
+			.select('id, criado_em, telefone, cliente_nome, tipo, sucesso, valor, detalhes')
+			.order('criado_em', { ascending: false })
+			.limit(limit);
+		if (tipo) q = q.eq('tipo', tipo);
+		if (telefone) q = q.eq('telefone', telefone);
+
+		const { data, error } = await q;
+		if (error) return c.json({ status: 'erro', razao: error.message }, 500);
+		return c.json({ total: data?.length ?? 0, eventos: data ?? [] });
+	});
+
 	/** Lista de erros — SEPARADO. Cliente NUNCA vê esse endpoint. */
 	router.get('/admin/erros', async (c) => {
 		const n = Number(c.req.query('n') ?? 50);
