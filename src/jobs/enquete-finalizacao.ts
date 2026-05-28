@@ -54,7 +54,9 @@ export async function runEnqueteFinalizacao(deps: EnqueteDeps): Promise<EnqueteR
 	let jaEnviados = 0;
 	let erros = 0;
 
-	const grupoTime = getEnv().UAZAPI_GRUPO_TIME;
+	const env = getEnv();
+	// Prioriza mandar pra Camila direto (1:1). Sem isso, fallback pro grupo.
+	const destinoCamila = env.UAZAPI_CAMILA_PHONE ?? env.UAZAPI_GRUPO_TIME;
 
 	for (const ag of eligible) {
 		// 2. Check if enquete already sent
@@ -70,7 +72,7 @@ export async function runEnqueteFinalizacao(deps: EnqueteDeps): Promise<EnqueteR
 		// 3. Manda menu pra Camila no grupo do time (não pra cliente!)
 		try {
 			await deps.uazapi.sendMenu({
-				number: grupoTime,
+				number: destinoCamila,
 				text: `📋 Camila, você *finalizou* o atendimento da *${ag.cliente.nome}* (${ag.servico.nome}, ${hora})?`,
 				choices: [
 					{ label: 'Sim, finalizei ✅', id: `Fin_sim${ag.id}` },

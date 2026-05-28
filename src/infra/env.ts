@@ -19,6 +19,10 @@ const envSchema = z.object({
 	UAZAPI_BASE_URL: z.string().url(),
 	UAZAPI_TOKEN: z.string().min(1),
 	UAZAPI_GRUPO_TIME: z.string().min(1),
+	/** Número da Camila (E.164 ou só dígitos, ex: 557196416018) pra mensagens
+	 *  operacionais 1:1 — confirmação de finalização etc. Se não setado, cai
+	 *  no UAZAPI_GRUPO_TIME como fallback. */
+	UAZAPI_CAMILA_PHONE: z.string().optional(),
 
 	// Supabase
 	SUPABASE_URL: z.string().url(),

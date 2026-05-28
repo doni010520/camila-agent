@@ -12,7 +12,7 @@ import {
 	getManutencaoServiceName,
 } from '../domain/manutencao.js';
 import { TRINKS_STATUS } from '../domain/trinks-status.js';
-import { getEnv } from '../infra/env.js';
+
 import { createRequestLogger } from '../infra/logger.js';
 
 export interface ButtonHandlerParams {
@@ -139,14 +139,14 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				return;
 			}
 			const agId = Number(agendamentoId);
-			const env = getEnv();
+			
 
 			let ag: Awaited<ReturnType<typeof deps.trinks.getAgendamento>>;
 			try {
 				ag = await deps.trinks.getAgendamento(agId);
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to get ag for finalizar_sim');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `❌ Não consegui ler o agendamento ${agId} pra finalizar.`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `❌ Não consegui ler o agendamento ${agId} pra finalizar.`).catch(() => {});
 				return;
 			}
 
@@ -155,7 +155,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				await deps.trinks.finalizarAgendamento(agId);
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to finalize via grupo button');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `❌ Erro ao finalizar ${ag.cliente.nome} no sistema.`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `❌ Erro ao finalizar ${ag.cliente.nome} no sistema.`).catch(() => {});
 				return;
 			}
 
@@ -163,7 +163,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				const readBack = await deps.trinks.getAgendamento(agId);
 				if (readBack.status.id !== TRINKS_STATUS.FINALIZADO) {
 					log.error({ agId, status: readBack.status }, 'Finalize verify failed');
-					await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `⚠️ Finalização de ${ag.cliente.nome} não confirmou no Trinks.`).catch(() => {});
+					await deps.uazapi.sendText(telefone, `⚠️ Finalização de ${ag.cliente.nome} não confirmou no Trinks.`).catch(() => {});
 					return;
 				}
 				try { await deps.supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.FINALIZADO }); } catch { /* */ }
@@ -178,7 +178,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				cliente = await deps.trinks.getCliente(ag.cliente.id);
 			} catch {
 				log.warn({ clienteId: ag.cliente.id }, 'Sem cliente — manutenção não oferecida');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone).`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone).`).catch(() => {});
 				return;
 			}
 			let numeroCliente: string | null = null;
@@ -190,7 +190,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			}
 			if (!numeroCliente) {
 				log.warn({ clienteId: ag.cliente.id }, 'Sem telefone — manutenção não oferecida');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone no cadastro).`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone no cadastro).`).catch(() => {});
 				return;
 			}
 
@@ -198,7 +198,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			const servicoManutencao = getManutencaoServiceName(ag.servico.nome);
 			if (!servicoManutencao) {
 				log.warn({ servico: ag.servico.nome }, 'Serviço sem mapeamento de manutenção');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `✅ ${ag.cliente.nome} finalizada. Serviço "${ag.servico.nome}" não tem manutenção mapeada — falar com cliente manualmente.`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Serviço "${ag.servico.nome}" não tem manutenção mapeada — falar com cliente manualmente.`).catch(() => {});
 				return;
 			}
 			const novaDataHora = calcularProximaManutencao(ag.dataHoraInicio, 15);
@@ -221,10 +221,10 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 					}).eq('telefone', numeroCliente);
 				} catch { /* best-effort */ }
 
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `✅ ${ag.cliente.nome} finalizada. Mandei oferta de manutenção pra ${novaDataLegivel}.`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Mandei oferta de manutenção pra ${novaDataLegivel}.`).catch(() => {});
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to send manutencao menu');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `✅ ${ag.cliente.nome} finalizada. ⚠️ Falha ao enviar manutenção: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. ⚠️ Falha ao enviar manutenção: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
 			}
 			break;
 		}
@@ -233,7 +233,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			// Camila marcou que cliente não compareceu (no grupo)
 			if (!agendamentoId) return;
 			const agId = Number(agendamentoId);
-			const env = getEnv();
+			
 			let ag: Awaited<ReturnType<typeof deps.trinks.getAgendamento>>;
 			try {
 				ag = await deps.trinks.getAgendamento(agId);
@@ -244,10 +244,10 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			try {
 				await deps.trinks.marcarClienteFaltou(agId);
 				await deps.supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.CLIENTE_FALTOU }).catch(() => undefined);
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `📝 ${ag.cliente.nome} marcada como não compareceu.`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `📝 ${ag.cliente.nome} marcada como não compareceu.`).catch(() => {});
 			} catch (err) {
 				log.error({ err, agId }, 'finalizar_nao: marcar falta failed');
-				await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, `❌ Erro ao marcar falta da ${ag.cliente.nome}: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
+				await deps.uazapi.sendText(telefone, `❌ Erro ao marcar falta da ${ag.cliente.nome}: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
 			}
 			break;
 		}
