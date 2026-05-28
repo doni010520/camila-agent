@@ -169,11 +169,13 @@ describe('runEnqueteFinalizacao', () => {
 		expect(r.total).toBe(0);
 	});
 
-	it('sends menu with id_sim/id_nao button IDs', async () => {
+	it('sends menu pro grupo do time com Fin_sim/Fin_nao (fluxo novo)', async () => {
 		const deps = makeDeps();
 		await runEnqueteFinalizacao(deps as never);
-		const menuCall = deps.uazapi.sendMenu.mock.calls[0]?.[0] as { choices: Array<{ id: string }> };
-		expect(menuCall.choices[0]?.id).toContain('id_sim');
-		expect(menuCall.choices[1]?.id).toBe('id_nao');
+		const menuCall = deps.uazapi.sendMenu.mock.calls[0]?.[0] as { choices: Array<{ id: string }>; number: string };
+		expect(menuCall.choices[0]?.id).toContain('Fin_sim');
+		expect(menuCall.choices[1]?.id).toContain('Fin_nao');
+		// destinatário tem que ser o grupo, não o cliente
+		expect(menuCall.number).toContain('@g.us');
 	});
 });

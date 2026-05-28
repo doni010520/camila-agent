@@ -65,10 +65,14 @@ export function isButtonClick(msg: z.infer<typeof uazapiMessageSchema>): boolean
 
 /**
  * Parse button click convention from production:
- * "Id_sim495316019" → { action: 'confirmar', agendamentoId: '495316019' }
- * "Id_nao495316019" → { action: 'recusar', agendamentoId: '495316019' }
- * "id_sim495316019" → { action: 'enquete_sim', agendamentoId: '495316019' }
- * "id_nao" → { action: 'enquete_nao', agendamentoId: '' }
+ * "Id_sim495316019"      → { action: 'confirmar',        agendamentoId: '495316019' } (lembrete véspera)
+ * "Id_nao495316019"      → { action: 'recusar',          agendamentoId: '495316019' }
+ * "id_sim495316019"      → { action: 'enquete_sim',      agendamentoId: '495316019' } (legacy enquete pra cliente)
+ * "id_nao"               → { action: 'enquete_nao',      agendamentoId: '' }
+ * "Fin_sim495316019"     → { action: 'finalizar_sim',    agendamentoId: '495316019' } (Camila no grupo)
+ * "Fin_nao495316019"     → { action: 'finalizar_nao',    agendamentoId: '495316019' }
+ * "Manut_sim495316019"   → { action: 'manutencao_sim',   agendamentoId: '495316019' } (cliente confirma manutenção)
+ * "Manut_nao495316019"   → { action: 'manutencao_nao',   agendamentoId: '495316019' }
  */
 export function parseButtonId(buttonOrListid: string): { action: string; agendamentoId: string } {
 	const idStr = buttonOrListid.replace(/[^a-zA-Z_]/g, '');
@@ -78,6 +82,10 @@ export function parseButtonId(buttonOrListid: string): { action: string; agendam
 	if (idStr === 'Id_nao') return { action: 'recusar', agendamentoId: numStr };
 	if (idStr === 'id_sim') return { action: 'enquete_sim', agendamentoId: numStr };
 	if (idStr === 'id_nao') return { action: 'enquete_nao', agendamentoId: numStr };
+	if (idStr === 'Fin_sim') return { action: 'finalizar_sim', agendamentoId: numStr };
+	if (idStr === 'Fin_nao') return { action: 'finalizar_nao', agendamentoId: numStr };
+	if (idStr === 'Manut_sim') return { action: 'manutencao_sim', agendamentoId: numStr };
+	if (idStr === 'Manut_nao') return { action: 'manutencao_nao', agendamentoId: numStr };
 	return { action: 'unknown', agendamentoId: numStr };
 }
 

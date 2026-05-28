@@ -2,6 +2,7 @@ import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import { todayBRT } from '../domain/data-brt.js';
+import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
 
@@ -53,6 +54,8 @@ export async function runEnqueteFinalizacao(deps: EnqueteDeps): Promise<EnqueteR
 	let jaEnviados = 0;
 	let erros = 0;
 
+	const grupoTime = getEnv().UAZAPI_GRUPO_TIME;
+
 	for (const ag of eligible) {
 		// 2. Check if enquete already sent
 		const existing = await deps.supabase.getAgendamento(ag.id);
@@ -61,36 +64,22 @@ export async function runEnqueteFinalizacao(deps: EnqueteDeps): Promise<EnqueteR
 			continue;
 		}
 
-		// 3. Find phone by cliente ID (not name)
-		let cliente: Awaited<ReturnType<typeof deps.trinks.getCliente>>;
-		try {
-			cliente = await deps.trinks.getCliente(ag.cliente.id);
-		} catch {
-			log.warn({ agId: ag.id, clienteId: ag.cliente.id }, 'Failed to get cliente for enquete');
-			erros++;
-			continue;
-		}
-		const telefone = cliente.telefones?.[0];
-		if (!telefone) {
-			log.warn({ agId: ag.id }, 'No phone for enquete');
-			erros++;
-			continue;
-		}
+		// Formato horário pra ler no grupo
+		const hora = ag.dataHoraInicio.slice(11, 16);
 
-		const number = `${telefone.ddi ?? '55'}${telefone.ddd ?? '71'}${telefone.telefone}`;
-
-		// 4. Send enquete buttons
+		// 3. Manda menu pra Camila no grupo do time (não pra cliente!)
 		try {
 			await deps.uazapi.sendMenu({
-				number,
-				text: `Oi ${ag.cliente.nome.split(' ')[0]}! Já finalizou seu procedimento de *${ag.servico.nome}*?`,
+				number: grupoTime,
+				text: `📋 Camila, você *finalizou* o atendimento da *${ag.cliente.nome}* (${ag.servico.nome}, ${hora})?`,
 				choices: [
-					{ label: 'Sim, finalizou ✅', id: `id_sim${ag.id}` },
-					{ label: 'Ainda não', id: 'id_nao' },
+					{ label: 'Sim, finalizei ✅', id: `Fin_sim${ag.id}` },
+					{ label: 'Não compareceu ❌', id: `Fin_nao${ag.id}` },
 				],
 			});
 
-			// 5. Mirror + mark
+			// 4. Mirror + mark enviada (pra não duplicar)
+			const numeroCliente = `${ag.cliente.id}`; // placeholder, real number será buscado quando Camila clicar Sim
 			await deps.supabase.upsertAgendamento({
 				id: ag.id,
 				status_id: ag.status.id,
@@ -103,12 +92,12 @@ export async function runEnqueteFinalizacao(deps: EnqueteDeps): Promise<EnqueteR
 				data_hora_inicio: ag.dataHoraInicio,
 				duracao_em_minutos: ag.duracaoEmMinutos,
 				valor: ag.valor ?? undefined,
-				numero: number,
+				numero: numeroCliente,
 			});
 			await deps.supabase.markEnqueteEnviada(ag.id);
 			enviados++;
 		} catch (err) {
-			log.error({ err, agId: ag.id }, 'Failed to send enquete');
+			log.error({ err, agId: ag.id }, 'Failed to send enquete to group');
 			erros++;
 		}
 	}
