@@ -210,6 +210,8 @@ export class UazapiClient {
 			type: 'button',
 			text: opts.text,
 			choices: opts.choices.map((c) => `${c.label}|${c.id}`),
+			selectableCount: 1, // 1 clique só por menu
+			readchat: true,
 		});
 		this.log.info({ number: opts.number.slice(-8), choiceCount: opts.choices.length }, 'Menu sent');
 	}

@@ -162,19 +162,12 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 
 		const log = createRequestLogger(telefone);
 
-		// ── Humano digitando pela conta business (fromMe=true, wasSentByApi=false) ──
-		// Registra intervenção humana → Helena fica calada por 30 min.
-		if (message.fromMe) {
-			await leadManager.setIntervencaoHumana(telefone).catch((err: unknown) =>
-				log.warn({ err }, 'setIntervencaoHumana failed — non-blocking'),
-			);
-			return c.json({ status: 'ok', ignored: 'intervencao_humana' });
-		}
-
-		// Check if this is a button click (same endpoint, routed by buttonOrListid)
+		// ── Button click PRIMEIRO ──
+		// Importante: se a Camila clica num botão no privado dela, chega com
+		// fromMe=true + buttonOrListid != ''. Não pode ser tratado como
+		// intervenção humana — é um clique operacional dela.
 		if (isButtonClick(message)) {
-			log.info({ buttonId: message.buttonOrListid }, 'Button click received');
-			// Handle button in background, respond 200 immediately
+			log.info({ buttonId: message.buttonOrListid, fromMe: message.fromMe }, 'Button click received');
 			handleButton({
 				telefone,
 				buttonOrListid: message.buttonOrListid,
@@ -182,6 +175,15 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 				leadManager,
 			}).catch((err) => log.error({ err }, 'Button handler error'));
 			return c.json({ status: 'ok', type: 'button' });
+		}
+
+		// ── Humano digitando pela conta business (fromMe=true, wasSentByApi=false) ──
+		// Registra intervenção humana → Helena fica calada por 30 min.
+		if (message.fromMe) {
+			await leadManager.setIntervencaoHumana(telefone).catch((err: unknown) =>
+				log.warn({ err }, 'setIntervencaoHumana failed — non-blocking'),
+			);
+			return c.json({ status: 'ok', ignored: 'intervencao_humana' });
 		}
 
 		// Get or create lead
