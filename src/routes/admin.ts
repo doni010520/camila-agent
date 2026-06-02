@@ -250,6 +250,22 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Disponibilidade real da profissional num dia (horariosVagos do Trinks).
+	 * Debug: ver se bloqueios (ex: "Lanche") somem dos horariosVagos.
+	 *   GET /admin/trinks/disponibilidade?data=2026-06-03&profissionalId=170223
+	 */
+	router.get('/admin/trinks/disponibilidade', async (c) => {
+		const data = c.req.query('data');
+		if (!data) return c.json({ status: 'erro', razao: 'data obrigatória (YYYY-MM-DD)' }, 400);
+		try {
+			const resp = await deps.trinks.listProfissionaisComAgenda(data);
+			return c.json({ data, profissionais: resp.data });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Cancela um agendamento direto via Trinks API. Usar quando duplicata ou
 	 * cliente pediu fora da janela normal.
 	 *   POST /admin/trinks/cancelar/:id?motivo=...
