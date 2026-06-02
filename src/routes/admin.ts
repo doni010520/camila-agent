@@ -250,6 +250,37 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Lista TODOS os agendamentos de um dia (sem filtro de cliente).
+	 * Cruza com disponibilidade pra diagnosticar folga vs lotação.
+	 *   GET /admin/trinks/dia?data=2026-06-03
+	 */
+	router.get('/admin/trinks/dia', async (c) => {
+		const data = c.req.query('data');
+		if (!data) return c.json({ status: 'erro', razao: 'data obrigatória (YYYY-MM-DD)' }, 400);
+		try {
+			const result = await deps.trinks.listAgendamentos({
+				dataInicio: `${data}T00:00:00`,
+				dataFim: `${data}T23:59:59`,
+			});
+			const ags = (result.data ?? [])
+				.filter((a) => a.profissional.id === 170223)
+				.map((a) => ({
+					id: a.id,
+					cliente: a.cliente.nome,
+					servico: a.servico.nome,
+					inicio: a.dataHoraInicio,
+					dur: a.duracaoEmMinutos,
+					status: a.status.nome,
+					status_id: a.status.id,
+				}))
+				.sort((x, y) => x.inicio.localeCompare(y.inicio));
+			return c.json({ data, total: ags.length, agendamentos: ags });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Disponibilidade real da profissional num dia (horariosVagos do Trinks).
 	 * Debug: ver se bloqueios (ex: "Lanche") somem dos horariosVagos.
 	 *   GET /admin/trinks/disponibilidade?data=2026-06-03&profissionalId=170223
