@@ -46,29 +46,68 @@ export function addDaysBRT(dateStr: string, days: number): string {
 	return todayBRT(d);
 }
 
+const DAYS_PT = [
+	'domingo',
+	'segunda-feira',
+	'terça-feira',
+	'quarta-feira',
+	'quinta-feira',
+	'sexta-feira',
+	'sábado',
+];
+
+/**
+ * Extrai os componentes de parede (ano/mês/dia/hora/min) de um datetime do Trinks,
+ * IGNORANDO qualquer indicador de fuso (Z, +00:00, -03:00).
+ *
+ * ⚠️ CRÍTICO: o Trinks representa SEMPRE horário local BRT, mas devolve formato
+ * INCONSISTENTE — às vezes naive ("2026-06-03T10:00:00"), às vezes com Z
+ * ("2026-06-03T10:00:00Z") significando o MESMO 10h local (não 10h UTC).
+ * Se passássemos por `new Date()`, o Z faria converter 10h→07h (bug que mandou
+ * lembrete errado pra cliente). Por isso extraímos os números direto da string.
+ */
+export function parseTrinksWallClock(
+	isoString: string,
+): { ano: number; mes: number; dia: number; hora: number; min: number } | null {
+	const m = isoString.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+	if (!m) return null;
+	return {
+		ano: Number(m[1]),
+		mes: Number(m[2]),
+		dia: Number(m[3]),
+		hora: Number(m[4]),
+		min: Number(m[5]),
+	};
+}
+
+/** Day of week (0=Sun..6=Sat) a partir de componentes de data, sem fuso. */
+function dowFromParts(ano: number, mes: number, dia: number): number {
+	return new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay();
+}
+
+/**
+ * Converte um datetime do Trinks pra um número de minutos absoluto (epoch-like),
+ * tratando como horário de parede BRT (ignora Z/offset). Serve pra comparar
+ * sobreposição de horários de forma consistente, sem bug de fuso.
+ * Retorna NaN se não parseável.
+ */
+export function trinksWallClockToEpochMin(isoString: string): number {
+	const p = parseTrinksWallClock(isoString);
+	if (!p) return Number.NaN;
+	// Date.UTC dá ms; tratamos todos os horários na mesma régua (UTC dos componentes).
+	return Date.UTC(p.ano, p.mes - 1, p.dia, p.hora, p.min) / 60000;
+}
+
 /** Format a datetime string as human-readable in BRT.
- * Trinks returns naive datetimes (no timezone suffix) that represent BRT local time.
- * We append -03:00 if no timezone indicator is present. */
+ * Trinks devolve horário local BRT (com ou sem Z indevido) — sempre tratamos
+ * como horário de parede, extraindo componentes da string. */
 export function formatDateTimeBRT(isoString: string): string {
-	// If no timezone info, treat as BRT (-03:00)
-	const normalized =
-		/[Z+]/.test(isoString) || isoString.includes('-03') ? isoString : `${isoString}-03:00`;
-	const d = new Date(normalized);
-	const DAYS = [
-		'domingo',
-		'segunda-feira',
-		'terça-feira',
-		'quarta-feira',
-		'quinta-feira',
-		'sexta-feira',
-		'sábado',
-	];
-	const dayOfWeek = dayOfWeekBRT(d);
-	const dateStr = d.toLocaleDateString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit' });
-	const timeStr = d.toLocaleTimeString('pt-BR', {
-		timeZone: TZ,
-		hour: '2-digit',
-		minute: '2-digit',
-	});
-	return `${DAYS[dayOfWeek]}, ${dateStr} às ${timeStr}`;
+	const p = parseTrinksWallClock(isoString);
+	if (!p) return isoString; // formato inesperado — devolve cru
+	const dow = dowFromParts(p.ano, p.mes, p.dia);
+	const dd = String(p.dia).padStart(2, '0');
+	const mm = String(p.mes).padStart(2, '0');
+	const hh = String(p.hora).padStart(2, '0');
+	const min = String(p.min).padStart(2, '0');
+	return `${DAYS_PT[dow]}, ${dd}/${mm} às ${hh}:${min}`;
 }

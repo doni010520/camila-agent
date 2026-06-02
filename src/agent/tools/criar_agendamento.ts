@@ -3,6 +3,7 @@ import type { PostgresClient } from '../../clients/postgres.js';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { parsePhone } from '../../domain/telefone.js';
 import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
 import {
@@ -147,12 +148,13 @@ export function createCriarAgendamento(deps: {
 					dataInicio: `${dataDiaConflito}T00:00:00`,
 					dataFim: `${dataDiaConflito}T23:59:59`,
 				});
-				const propostoInicio = new Date(`${input.data_e_hora}${input.data_e_hora.includes('-03') || input.data_e_hora.endsWith('Z') ? '' : '-03:00'}`).getTime();
-				const propostoFim = propostoInicio + servico.duracao_minutos * 60_000;
+				// Horário de parede BRT (imune a Z/offset inconsistente do Trinks)
+				const propostoInicio = trinksWallClockToEpochMin(input.data_e_hora);
+				const propostoFim = propostoInicio + servico.duracao_minutos;
 				const conflito = (ocupacao.data ?? []).find((a) => {
 					if (!ACTIVE_STATUSES.has(a.status.id)) return false;
-					const ini = new Date(`${a.dataHoraInicio}${a.dataHoraInicio.includes('-03') || a.dataHoraInicio.endsWith('Z') ? '' : '-03:00'}`).getTime();
-					const fim = ini + (a.duracaoEmMinutos ?? 60) * 60_000;
+					const ini = trinksWallClockToEpochMin(a.dataHoraInicio);
+					const fim = ini + (a.duracaoEmMinutos ?? 60);
 					return propostoInicio < fim && propostoFim > ini;
 				});
 				if (conflito) {

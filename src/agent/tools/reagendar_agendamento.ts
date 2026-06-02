@@ -3,6 +3,7 @@ import type { PostgresClient } from '../../clients/postgres.js';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
 import { rememberAgendamento } from '../../infra/agendamento-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
@@ -112,13 +113,14 @@ export function createReagendarAgendamento(deps: {
 					dataInicio: `${dataDia}T00:00:00`,
 					dataFim: `${dataDia}T23:59:59`,
 				});
-				const propostoInicio = new Date(`${input.nova_data_hora}${input.nova_data_hora.includes('-03') || input.nova_data_hora.endsWith('Z') ? '' : '-03:00'}`).getTime();
-				const propostoFim = propostoInicio + (antigo.duracaoEmMinutos ?? 60) * 60_000;
+				// Horário de parede BRT (imune a Z/offset inconsistente do Trinks)
+				const propostoInicio = trinksWallClockToEpochMin(input.nova_data_hora);
+				const propostoFim = propostoInicio + (antigo.duracaoEmMinutos ?? 60);
 				const conflito = (ocupacao.data ?? []).find((a) => {
 					if (a.id === agIdAntigo) return false; // o antigo vai ser cancelado
 					if (!ACTIVE_STATUSES.has(a.status.id)) return false;
-					const ini = new Date(`${a.dataHoraInicio}${a.dataHoraInicio.includes('-03') || a.dataHoraInicio.endsWith('Z') ? '' : '-03:00'}`).getTime();
-					const fim = ini + (a.duracaoEmMinutos ?? 60) * 60_000;
+					const ini = trinksWallClockToEpochMin(a.dataHoraInicio);
+					const fim = ini + (a.duracaoEmMinutos ?? 60);
 					return propostoInicio < fim && propostoFim > ini;
 				});
 				if (conflito) {

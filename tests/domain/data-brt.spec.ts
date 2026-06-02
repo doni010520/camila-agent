@@ -52,6 +52,24 @@ describe('formatDateTimeBRT', () => {
 		expect(r).toContain('20/05');
 		expect(r).toContain('14:00');
 	});
+
+	// 🚨 REGRESSÃO: Trinks às vezes devolve com Z (UTC) significando horário
+	// local BRT. Antes virava -3h (10h→07h) e mandava lembrete errado pra
+	// cliente. Agora tratamos como horário de parede, ignorando o fuso.
+	it('trata Z indevido como horário de parede BRT (não converte -3h)', () => {
+		expect(formatDateTimeBRT('2026-06-03T10:00:00Z')).toContain('10:00');
+		expect(formatDateTimeBRT('2026-06-03T10:00:00.000Z')).toContain('10:00');
+		expect(formatDateTimeBRT('2026-06-03T10:00:00+00:00')).toContain('10:00');
+		expect(formatDateTimeBRT('2026-06-03T10:00:00-03:00')).toContain('10:00');
+		expect(formatDateTimeBRT('2026-06-03T10:00:00')).toContain('10:00');
+	});
+
+	it('mantém o dia correto independente de fuso', () => {
+		// quarta-feira 03/06/2026
+		const r = formatDateTimeBRT('2026-06-03T10:00:00Z');
+		expect(r).toContain('quarta');
+		expect(r).toContain('03/06');
+	});
 });
 
 describe('nowBRT', () => {
