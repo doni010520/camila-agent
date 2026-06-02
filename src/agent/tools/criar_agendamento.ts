@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
+import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { parsePhone } from '../../domain/telefone.js';
 import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
 import {
@@ -137,6 +138,37 @@ export function createCriarAgendamento(deps: {
 				}
 			} catch {
 				/* idempotency check is best-effort; fall through to create */
+			}
+
+			// 3a-DISPONIBILIDADE: valida o horário contra horariosVagos do Trinks.
+			// Essa é a FONTE DE VERDADE — o mesmo que o painel usa. Desconta
+			// agendamentos de cliente E bloqueios manuais da Camila (ex: "Lanche",
+			// almoço, dia fechado). Sem isso, Helena marcava em cima de bloqueio.
+			try {
+				const dataDiaDisp = input.data_e_hora.substring(0, 10);
+				const horaInicio = input.data_e_hora.substring(11, 16); // "HH:MM"
+				const agenda = await trinks.listProfissionaisComAgenda(dataDiaDisp);
+				const prof = agenda.data.find((p) => p.id === profissionalId);
+				if (prof) {
+					if (!horarioCabeNosVagos(horaInicio, servico.duracao_minutos, prof.horariosVagos)) {
+						return {
+							status: 'erro',
+							razao:
+								'Horário indisponível na agenda da profissional (ocupado, bloqueado ou fora do expediente). NÃO insista nesse horário. Chame consultar_disponibilidade pra ver os horários realmente livres e ofereça à cliente.',
+							detalhes: {
+								horario_pedido: horaInicio,
+								duracao_min: servico.duracao_minutos,
+								horarios_vagos: prof.horariosVagos,
+							},
+						};
+					}
+				} else {
+					// eslint-disable-next-line no-console
+					console.warn(`Profissional ${profissionalId} ausente na agenda de ${dataDiaDisp} — pulando validacao horariosVagos`);
+				}
+			} catch (err) {
+				// eslint-disable-next-line no-console
+				console.warn('Disponibilidade check (horariosVagos) failed:', err);
 			}
 
 			// 3aa. CHECK CONFLITO: profissional já tem agendamento ativo sobrepondo o horário?

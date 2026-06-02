@@ -77,6 +77,43 @@ export function filterByTurno(
 	return horarios.filter((h) => h >= range.start && h < range.end);
 }
 
+/**
+ * Verifica se um horário de início + duração cabe inteiramente nos horariosVagos
+ * da profissional (vindos do Trinks /v1/agendamentos/profissionais/{data}).
+ *
+ * horariosVagos são slots de 30min em HH:MM (ex: ["09:00","09:30",...]) que JÁ
+ * descontam agendamentos de clientes E bloqueios manuais (ex: "Lanche", almoço).
+ * É a fonte de verdade da disponibilidade — a mesma que o painel usa.
+ *
+ * Ex: início 09:00, duração 120min → precisa de 09:00, 09:30, 10:00, 10:30 vagos.
+ *
+ * @param horaInicio "HH:MM"
+ * @param duracaoMin duração em minutos
+ * @param horariosVagos array de slots livres "HH:MM"
+ */
+export function horarioCabeNosVagos(
+	horaInicio: string,
+	duracaoMin: number,
+	horariosVagos: string[],
+): boolean {
+	const m = horaInicio.match(/^(\d{2}):(\d{2})/);
+	if (!m) return false;
+	const set = new Set(horariosVagos);
+	const slotsNeeded = Math.max(1, Math.ceil(duracaoMin / 30));
+	let h = Number(m[1]);
+	let min = Number(m[2]);
+	for (let i = 0; i < slotsNeeded; i++) {
+		const slot = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+		if (!set.has(slot)) return false;
+		min += 30;
+		if (min >= 60) {
+			h += 1;
+			min -= 60;
+		}
+	}
+	return true;
+}
+
 /** Format schedule for the system prompt */
 export function formatScheduleForPrompt(): string {
 	return [

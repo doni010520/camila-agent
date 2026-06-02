@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
+import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
 import { rememberAgendamento } from '../../infra/agendamento-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
@@ -103,6 +104,42 @@ export function createReagendarAgendamento(deps: {
 			}
 
 			const dataAnterior = antigo.dataHoraInicio;
+
+			// 2.4 DISPONIBILIDADE: novo horário precisa estar nos horariosVagos do Trinks
+			// (fonte de verdade — desconta agendamentos + bloqueios + expediente).
+			try {
+				const dataDiaDisp = input.nova_data_hora.substring(0, 10);
+				const horaInicio = input.nova_data_hora.substring(11, 16);
+				const agenda = await trinks.listProfissionaisComAgenda(dataDiaDisp);
+				const prof = agenda.data.find((p) => p.id === antigo.profissional.id);
+				if (prof) {
+					// soma o slot do próprio antigo como "vago" se for no mesmo dia
+					// (ele será cancelado), pra permitir reagendar dentro da própria janela
+					const vagos = new Set(prof.horariosVagos);
+					if (antigo.dataHoraInicio.substring(0, 10) === dataDiaDisp) {
+						const hIni = antigo.dataHoraInicio.substring(11, 16);
+						const slots = Math.max(1, Math.ceil((antigo.duracaoEmMinutos ?? 60) / 30));
+						const partes = hIni.split(':');
+						let hh = Number(partes[0] ?? 0);
+						let mm = Number(partes[1] ?? 0);
+						for (let i = 0; i < slots; i++) {
+							vagos.add(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+							mm += 30; if (mm >= 60) { hh += 1; mm -= 60; }
+						}
+					}
+					if (!horarioCabeNosVagos(horaInicio, antigo.duracaoEmMinutos ?? 60, Array.from(vagos))) {
+						return {
+							status: 'erro',
+							razao:
+								'Novo horário indisponível na agenda (ocupado, bloqueado ou fora do expediente). Mantenha o antigo e use consultar_disponibilidade pra oferecer horários livres.',
+							detalhes: { horario_pedido: horaInicio, agendamentoAntigoIntacto: agIdAntigo, horarios_vagos: prof.horariosVagos },
+						};
+					}
+				}
+			} catch (err) {
+				// eslint-disable-next-line no-console
+				console.warn('Reagendar disponibilidade check failed:', err);
+			}
 
 			// 2.5 CHECK CONFLITO no novo horário ANTES de cancelar o antigo.
 			// Trinks não bloqueia overlap — validamos aqui pra não criar dupla agenda.

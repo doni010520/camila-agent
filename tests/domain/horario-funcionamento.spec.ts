@@ -2,9 +2,33 @@ import { describe, expect, it } from 'vitest';
 import {
 	filterByTurno,
 	getScheduleForDay,
+	horarioCabeNosVagos,
 	isLunchBreak,
 	isWithinBusinessHours,
 } from '../../src/domain/horario-funcionamento.js';
+
+describe('horarioCabeNosVagos', () => {
+	const vagos = ['09:00', '09:30', '10:00', '10:30', '14:00', '14:30'];
+
+	it('aceita quando todos os slots da duração estão vagos', () => {
+		expect(horarioCabeNosVagos('09:00', 120, vagos)).toBe(true); // 09:00-11:00 → 09:00,09:30,10:00,10:30
+	});
+	it('recusa se um slot intermediário falta (bloqueio no meio)', () => {
+		expect(horarioCabeNosVagos('10:00', 120, vagos)).toBe(false); // precisaria 11:00, 11:30 → faltam
+	});
+	it('recusa horário totalmente fora dos vagos (bloqueio "Lanche")', () => {
+		expect(horarioCabeNosVagos('12:00', 60, vagos)).toBe(false);
+	});
+	it('recusa quando agenda vazia (dia fechado)', () => {
+		expect(horarioCabeNosVagos('09:00', 60, [])).toBe(false);
+	});
+	it('aceita serviço curto de 1 slot', () => {
+		expect(horarioCabeNosVagos('14:00', 30, vagos)).toBe(true);
+	});
+	it('aceita duração que cruza a hora cheia', () => {
+		expect(horarioCabeNosVagos('09:30', 60, vagos)).toBe(true); // 09:30,10:00
+	});
+});
 
 describe('getScheduleForDay', () => {
 	it('weekday is open with 2 periods', () => {
