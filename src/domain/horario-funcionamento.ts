@@ -117,11 +117,18 @@ export function horarioCabeNosVagos(
 /** Format schedule for the system prompt */
 export function formatScheduleForPrompt(): string {
 	return [
-		'Horário de funcionamento:',
-		'- Seg a Sex: 08:00–12:00 e 13:30–18:00',
-		'- Sábado: 09:00–13:00',
-		'- Domingo: Fechado',
-		'- Almoço: 12:00–13:30 (não agendar nesse intervalo)',
+		'## Horário de funcionamento (IMPORTANTE)',
+		'',
+		'A agenda da Camila **muda de dia pra dia** — ela define os horários que abre em cada data.',
+		'Por isso, **NUNCA afirme um horário fixo de abertura/fechamento pra cliente** (ex: não diga',
+		'"abrimos às 8h" ou "atendemos até 18h"). Em geral ela começa por volta das 9h e atende até a noite,',
+		'mas isso varia.',
+		'',
+		'Regra de ouro: quando a cliente perguntar horário ou quiser marcar, **sempre chame',
+		'`consultar_disponibilidade`** e ofereça SOMENTE os horários que a tool retornar. Esses horários',
+		'já refletem a agenda real (folgas, bloqueios, almoço e horários ocupados já vêm descontados).',
+		'- Domingo: fechado.',
+		'- Se a tool não retornar nenhum horário num dia, é porque a Camila não atende nesse dia ou está lotada — ofereça outro dia.',
 	].join('\n');
 }
 
