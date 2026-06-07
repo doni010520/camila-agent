@@ -5,6 +5,7 @@ import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import { getEnv } from '../infra/env.js';
 import { rootLogger } from '../infra/logger.js';
+import { runDetectarConflitos } from '../jobs/detectar-conflitos.js';
 import { runEnqueteFinalizacao } from '../jobs/enquete-finalizacao.js';
 import { runLembreteAmanha } from '../jobs/lembrete-amanha.js';
 import { runRelatorioDiario } from '../jobs/relatorio-diario.js';
@@ -79,6 +80,23 @@ export function createCronRouter(deps: CronDeps): Hono {
 			return c.json({ status: 'ok', ...result });
 		} catch (err) {
 			log.error({ err }, 'Cron sync-clientes failed');
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	router.post('/cron/detectar-conflitos', async (c) => {
+		const log = rootLogger.child({ job: 'cron-detectar-conflitos' });
+		try {
+			const result = await runDetectarConflitos({
+				trinks: deps.trinks,
+				uazapi: deps.uazapi,
+				postgres: deps.postgres,
+				profissionalId: getEnv().TRINKS_PROFISSIONAL_ID_CAMILA,
+				logger: log,
+			});
+			return c.json({ status: 'ok', ...result });
+		} catch (err) {
+			log.error({ err }, 'Cron detectar-conflitos failed');
 			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
 		}
 	});

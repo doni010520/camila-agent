@@ -109,7 +109,8 @@ export class PostgresClient {
 			INSERT INTO cron_jobs (job_name, enabled, cron_expressions, descricao) VALUES
 				('lembrete',       true, ARRAY['0 9 * * *','0 13 * * *','0 18 * * *'], 'Lembrete pra confirmar agendamento de amanhã (3x ao dia, igual n8n velho)'),
 				('enquete',        true, ARRAY['0 20 * * *'],                          'Enquete pós-atendimento (final do dia)'),
-				('sync_clientes',  true, ARRAY['0 4 * * 0'],                           'Sincroniza clientes da Trinks pro Postgres (domingo madrugada)')
+				('sync_clientes',  true, ARRAY['0 4 * * 0'],                           'Sincroniza clientes da Trinks pro Postgres (domingo madrugada)'),
+				('detectar_conflitos', true, ARRAY['0 8 * * *','0 12 * * *','0 19 * * *'], 'Detecta agendamentos sobrepostos (qualquer origem) e alerta a Camila')
 			ON CONFLICT (job_name) DO NOTHING;
 		`);
 	}

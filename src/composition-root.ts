@@ -22,6 +22,7 @@ import { LeadManager } from './domain/lead.js';
 import { getEnv } from './infra/env.js';
 import { rootLogger } from './infra/logger.js';
 import { Scheduler } from './infra/scheduler.js';
+import { runDetectarConflitos } from './jobs/detectar-conflitos.js';
 import { runEnqueteFinalizacao } from './jobs/enquete-finalizacao.js';
 import { runLembreteAmanha } from './jobs/lembrete-amanha.js';
 import { runSyncClientes } from './jobs/sync-clientes.js';
@@ -123,6 +124,14 @@ export async function bootApp(): Promise<BootResult> {
 		}),
 	);
 	scheduler.register('sync_clientes', () => runSyncClientes({ trinks, postgres }));
+	scheduler.register('detectar_conflitos', () =>
+		runDetectarConflitos({
+			trinks,
+			uazapi,
+			postgres,
+			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+		}),
+	);
 	scheduler.start().catch((err) => log.error({ err }, 'Scheduler failed to start'));
 
 	// ── Global error handler ──
