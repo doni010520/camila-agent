@@ -213,7 +213,7 @@ export function createReagendarAgendamento(deps: {
 					dataHoraInicio: input.nova_data_hora,
 					duracaoEmMinutos: antigo.duracaoEmMinutos,
 					valor: antigo.valor ?? undefined,
-					observacoes: '',
+					observacoes: '🤖 Reagendado pela Helena (assistente virtual)',
 					confirmado: false,
 				});
 				agIdNovo = created.id;

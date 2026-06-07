@@ -217,7 +217,9 @@ export function createCriarAgendamento(deps: {
 					dataHoraInicio: input.data_e_hora,
 					duracaoEmMinutos: servico.duracao_minutos,
 					valor: servico.preco ?? undefined,
-					observacoes: '',
+					// Carimbo de rastreabilidade: aparece no painel do Trinks e permite
+					// distinguir agendamentos da Helena dos feitos manualmente pela Camila.
+					observacoes: '🤖 Agendado pela Helena (assistente virtual)',
 					confirmado: false,
 				});
 				agendamentoId = created.id;
