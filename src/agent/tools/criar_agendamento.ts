@@ -11,6 +11,7 @@ import {
 	getCachedAgendamento,
 	rememberAgendamento,
 } from '../../infra/agendamento-cache.js';
+import { lockKey, withAgendamentoLock } from '../../infra/agendamento-lock.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -89,6 +90,11 @@ export function createCriarAgendamento(deps: {
 				}
 			}
 
+			// LOCK por profissional+dia: serializa criações concorrentes pra eliminar
+			// race na verificação de disponibilidade (eventual consistency do Trinks).
+			// Duas clientes pedindo o mesmo horário ao mesmo tempo agora rodam em série —
+			// a segunda só valida DEPOIS da primeira ter criado, então enxerga o ocupado.
+			return await withAgendamentoLock(lockKey(profissionalId, input.data_e_hora), async () => {
 			// 3a. IDEMPOTENCY + ANTI-DUPLICAÇÃO POR DIA
 			// (a) Mesmo horário e mesmo cliente -> retorna existente (idempotency)
 			// (b) MESMO DIA mas horário/serviço diferente -> recusa e força reagendar.
@@ -140,35 +146,46 @@ export function createCriarAgendamento(deps: {
 				/* idempotency check is best-effort; fall through to create */
 			}
 
-			// 3a-DISPONIBILIDADE: valida o horário contra horariosVagos do Trinks.
-			// Essa é a FONTE DE VERDADE — o mesmo que o painel usa. Desconta
-			// agendamentos de cliente E bloqueios manuais da Camila (ex: "Lanche",
-			// almoço, dia fechado). Sem isso, Helena marcava em cima de bloqueio.
+			// 3a-DISPONIBILIDADE (FAIL-CLOSED): valida o horário contra horariosVagos
+			// do Trinks — a FONTE DE VERDADE que o painel usa. Desconta agendamentos
+			// de cliente E bloqueios manuais (ex: "Lanche", almoço, dia fechado).
+			//
+			// CRÍTICO: se NÃO conseguirmos validar (erro de API, profissional ausente),
+			// NÃO criamos às cegas — recusamos. Conflitar horário é pior que pedir
+			// pra cliente tentar de novo. "Nunca conflitar" é regra de ouro.
 			try {
 				const dataDiaDisp = input.data_e_hora.substring(0, 10);
 				const horaInicio = input.data_e_hora.substring(11, 16); // "HH:MM"
 				const agenda = await trinks.listProfissionaisComAgenda(dataDiaDisp);
 				const prof = agenda.data.find((p) => p.id === profissionalId);
-				if (prof) {
-					if (!horarioCabeNosVagos(horaInicio, servico.duracao_minutos, prof.horariosVagos)) {
-						return {
-							status: 'erro',
-							razao:
-								'Horário indisponível na agenda da profissional (ocupado, bloqueado ou fora do expediente). NÃO insista nesse horário. Chame consultar_disponibilidade pra ver os horários realmente livres e ofereça à cliente.',
-							detalhes: {
-								horario_pedido: horaInicio,
-								duracao_min: servico.duracao_minutos,
-								horarios_vagos: prof.horariosVagos,
-							},
-						};
-					}
-				} else {
-					// eslint-disable-next-line no-console
-					console.warn(`Profissional ${profissionalId} ausente na agenda de ${dataDiaDisp} — pulando validacao horariosVagos`);
+				if (!prof) {
+					return {
+						status: 'erro',
+						razao:
+							'Não consegui confirmar a disponibilidade da agenda nesse dia. Chame consultar_disponibilidade pra ver os horários livres antes de marcar.',
+						detalhes: { dia: dataDiaDisp, motivo: 'profissional_sem_agenda' },
+					};
+				}
+				if (!horarioCabeNosVagos(horaInicio, servico.duracao_minutos, prof.horariosVagos)) {
+					return {
+						status: 'erro',
+						razao:
+							'Horário indisponível na agenda da profissional (ocupado, bloqueado ou fora do expediente). NÃO insista nesse horário. Chame consultar_disponibilidade pra ver os horários realmente livres e ofereça à cliente.',
+						detalhes: {
+							horario_pedido: horaInicio,
+							duracao_min: servico.duracao_minutos,
+							horarios_vagos: prof.horariosVagos,
+						},
+					};
 				}
 			} catch (err) {
-				// eslint-disable-next-line no-console
-				console.warn('Disponibilidade check (horariosVagos) failed:', err);
+				// FAIL-CLOSED: não conseguimos verificar → não arriscamos conflito.
+				return {
+					status: 'erro',
+					razao:
+						'Tive um probleminha técnico pra confirmar a agenda agora. Diga à cliente que vai verificar e tentar em instantes (NÃO confirme o horário ainda).',
+					detalhes: { erro: err instanceof Error ? err.message : 'unknown' },
+				};
 			}
 
 			// 3aa. CHECK CONFLITO: profissional já tem agendamento ativo sobrepondo o horário?
@@ -310,6 +327,7 @@ export function createCriarAgendamento(deps: {
 					detalhes: { agendamentoId, error: err instanceof Error ? err.message : 'unknown' },
 				};
 			}
+			}); // fim withAgendamentoLock
 		},
 	};
 }

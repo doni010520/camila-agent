@@ -56,6 +56,19 @@ function makeDeps(overrides?: {
 				valor: 160,
 			}),
 		getCliente: vi.fn().mockResolvedValue({ id: 79761206, nome: 'Maria' }),
+		// idempotência/conflito: sem agendamentos por padrão
+		listAgendamentos: vi.fn().mockResolvedValue({ data: [] }),
+		// disponibilidade (fail-closed): Camila com slots livres cobrindo 14:00–16:00
+		listProfissionaisComAgenda: vi.fn().mockResolvedValue({
+			data: [
+				{
+					id: 170223,
+					nome: 'Camila Rosario',
+					horariosVagos: ['14:00', '14:30', '15:00', '15:30', '16:00', '16:30'],
+					intervalosVagos: [],
+				},
+			],
+		}),
 	};
 
 	const supabase = {
@@ -216,5 +229,55 @@ describe('criar_agendamento', () => {
 		);
 
 		expect(result.status).toBe('erro');
+	});
+
+	// ── Blindagem anti-conflito (NUNCA marcar em horário indisponível) ──
+
+	it('🛡️ recusa quando horário NÃO está nos horariosVagos (bloqueado/ocupado)', async () => {
+		const { tool, trinks } = makeDeps();
+		trinks.listProfissionaisComAgenda.mockResolvedValue({
+			data: [{ id: 170223, nome: 'Camila', horariosVagos: ['16:00', '16:30'], intervalosVagos: [] }],
+		});
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('🛡️ recusa quando dia está fechado (horariosVagos vazio)', async () => {
+		const { tool, trinks } = makeDeps();
+		trinks.listProfissionaisComAgenda.mockResolvedValue({
+			data: [{ id: 170223, nome: 'Camila', horariosVagos: [], intervalosVagos: [] }],
+		});
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('🛡️ FAIL-CLOSED: recusa quando consulta de disponibilidade falha (não cria às cegas)', async () => {
+		const { tool, trinks } = makeDeps();
+		trinks.listProfissionaisComAgenda.mockRejectedValue(new Error('Trinks timeout'));
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('🛡️ FAIL-CLOSED: recusa quando profissional ausente na agenda do dia', async () => {
+		const { tool, trinks } = makeDeps();
+		trinks.listProfissionaisComAgenda.mockResolvedValue({ data: [] });
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
 	});
 });
