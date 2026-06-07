@@ -11,7 +11,7 @@
 import type { PostgresClient } from '../clients/postgres.js';
 import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
-import { addDaysBRT, todayBRT, trinksWallClockToEpochMin } from '../domain/data-brt.js';
+import { addDaysBRT, todayBRT } from '../domain/data-brt.js';
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
@@ -41,6 +41,13 @@ function hhmm(min: number): string {
 	const h = Math.floor(min / 60);
 	const m = min % 60;
 	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Minutos desde 00:00 do dia, extraídos do wall-clock da string (imune a TZ). */
+function minutosDoDia(dataHora: string): number {
+	const m = dataHora.match(/[T ](\d{2}):(\d{2})/);
+	if (!m) return 0;
+	return Number(m[1]) * 60 + Number(m[2]);
 }
 
 export async function runDetectarConflitos(deps: DetectarConflitosDeps): Promise<{
@@ -79,7 +86,7 @@ export async function runDetectarConflitos(deps: DetectarConflitosDeps): Promise
 			.map((a) => ({
 				id: a.id,
 				cliente: a.cliente.nome,
-				ini: trinksWallClockToEpochMin(a.dataHoraInicio),
+				ini: minutosDoDia(a.dataHoraInicio), // minuto-do-dia (loop é por dia)
 				dur: a.duracaoEmMinutos ?? 60,
 			}))
 			.sort((x, y) => x.ini - y.ini);
