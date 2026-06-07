@@ -281,6 +281,27 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * JSON CRU de um agendamento direto do Trinks (todos os campos, sem schema).
+	 * Pra descobrir se há campo de data de criação/auditoria.
+	 *   GET /admin/trinks/raw/:id
+	 */
+	router.get('/admin/trinks/raw/:id', async (c) => {
+		const id = c.req.param('id');
+		try {
+			const r = await deps.trinks.rawRequest('GET', `/v1/agendamentos/${id}`);
+			let parsed: unknown = r.body;
+			try {
+				parsed = JSON.parse(r.body);
+			} catch {
+				/* keep raw string */
+			}
+			return c.json({ id, raw: parsed });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Disponibilidade real da profissional num dia (horariosVagos do Trinks).
 	 * Debug: ver se bloqueios (ex: "Lanche") somem dos horariosVagos.
 	 *   GET /admin/trinks/disponibilidade?data=2026-06-03&profissionalId=170223
