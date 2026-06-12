@@ -31,7 +31,7 @@ export function createConsultarDisponibilidade(deps: {
 	return {
 		name: 'consultar_disponibilidade',
 		description:
-			'Consulta horários disponíveis para agendamento nos próximos 5 dias. Retorna datas e horários livres.',
+			'Consulta horários disponíveis para agendamento nos próximos 14 dias. Retorna datas e horários livres.',
 		inputSchema,
 		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
 			// 1. Resolve serviço
@@ -82,7 +82,7 @@ export function createConsultarDisponibilidade(deps: {
 					'sábado',
 				];
 
-				for (let i = 0; i < 5; i++) {
+				for (let i = 0; i < 14; i++) {
 					const d = new Date(startDate);
 					d.setDate(d.getDate() + i);
 					const dayOfWeek = d.getDay();
@@ -118,7 +118,7 @@ export function createConsultarDisponibilidade(deps: {
 				}
 
 				if (opcoes.length === 0) {
-					return { status: 'erro', razao: 'Sem horários disponíveis nos próximos 5 dias' };
+					return { status: 'erro', razao: 'Sem horários disponíveis nos próximos 14 dias' };
 				}
 
 				return {

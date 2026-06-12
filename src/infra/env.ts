@@ -19,10 +19,7 @@ const envSchema = z.object({
 	UAZAPI_BASE_URL: z.string().url(),
 	UAZAPI_TOKEN: z.string().min(1),
 	UAZAPI_GRUPO_TIME: z.string().min(1),
-	/** Número da Camila (E.164 ou só dígitos, ex: 557196416018) pra mensagens
-	 *  operacionais 1:1 — confirmação de finalização etc. Se não setado, cai
-	 *  no UAZAPI_GRUPO_TIME como fallback. */
-	UAZAPI_CAMILA_PHONE: z.string().optional(),
+	UAZAPI_CAMILA_PHONE: z.string().default('557194027176'),
 
 	// Supabase
 	SUPABASE_URL: z.string().url(),
@@ -87,6 +84,7 @@ export function setTestEnv(overrides: Partial<Env>): Env {
 		UAZAPI_BASE_URL: 'https://test.uazapi.com',
 		UAZAPI_TOKEN: 'test-token',
 		UAZAPI_GRUPO_TIME: '123@g.us',
+		UAZAPI_CAMILA_PHONE: '557194027176',
 		SUPABASE_URL: 'https://test.supabase.co',
 		SUPABASE_SERVICE_ROLE_KEY: 'test-key',
 		SUPABASE_STORAGE_BUCKET: 'catalogos',
