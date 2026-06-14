@@ -20,10 +20,35 @@ function normalizarServicoTexto(s: string): string {
 		.trim();
 }
 
+/**
+ * Termos guarda-chuva que descrevem a CATEGORIA, não um serviço específico.
+ * "cílios" aparece literalmente só em "Cílios marrons" no catálogo — todos os
+ * outros são "Volume X". Sem essa lista, cliente dizendo "quero cílios" cairia
+ * sempre em "Cílios marrons". Esses termos não distinguem nada → não casam
+ * sozinhos (força a Helena a perguntar a técnica e mandar o catálogo).
+ */
+const TERMOS_GENERICOS = new Set([
+	'cilios',
+	'cilio',
+	'extensao',
+	'extensoes',
+	'aplicacao',
+	'aplicacoes',
+	'lash',
+	'lashes',
+	'procedimento',
+]);
+
 export function scoreServicoMatch(input: string, nomeServico: string): number {
 	const i = normalizarServicoTexto(input);
 	const n = normalizarServicoTexto(nomeServico);
 	if (!i || !n) return 0;
+
+	// Palavras significativas do input = remove genéricos guarda-chuva.
+	// Se sobrar NADA (input puramente genérico tipo "cilios", "extensao de
+	// cilios"), não casa com nada — Helena tem que perguntar a técnica.
+	const inputWords = i.split(' ').filter((w) => w.length >= 3 && !TERMOS_GENERICOS.has(w));
+	if (inputWords.length === 0) return 0;
 
 	// Detecta intenção de manutenção. Aceita typos comuns: manuten/manute/manten
 	const inputQuerManuten = /manute|manten/.test(i) || /15\s*dias|25\s*dias|retoque/.test(i);
@@ -37,13 +62,12 @@ export function scoreServicoMatch(input: string, nomeServico: string): number {
 	// Substring match (input dentro do nome)
 	if (n.includes(i)) score += 50;
 
-	// Cada palavra do input que aparece no nome conta
-	const inputWords = i.split(' ').filter((w) => w.length >= 3);
+	// Cada palavra significativa do input que aparece no nome conta
 	const nomeWords = new Set(n.split(' '));
 	const wordMatches = inputWords.filter((w) => nomeWords.has(w)).length;
 	score += wordMatches * 15;
 
-	// Sem palavra em comum E sem substring → não é match
+	// Sem palavra significativa em comum E sem substring → não é match
 	if (score === 0) return 0;
 
 	// Penalidade/bonus de intenção de manutenção
