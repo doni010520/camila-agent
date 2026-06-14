@@ -88,6 +88,38 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		return c.json({ telefone, total: rows.length, mensagens: rows });
 	});
 
+	/**
+	 * Busca textual no histórico de conversa. Acha todas as conversas onde
+	 * aparece um termo (ex: "marrom" pra auditar o bug do matcher de serviço).
+	 *   GET /admin/buscar?q=marrom&role=assistant&n=200
+	 * role opcional: 'user' (só cliente) | 'assistant' (só Helena).
+	 * Agrupa por telefone pra facilitar a investigação.
+	 */
+	router.get('/admin/buscar', async (c) => {
+		const q = c.req.query('q');
+		if (!q) return c.json({ status: 'erro', razao: 'q (termo) obrigatório' }, 400);
+		const roleParam = c.req.query('role');
+		const role = roleParam === 'user' || roleParam === 'assistant' ? roleParam : undefined;
+		const n = Number(c.req.query('n') ?? 200);
+		const hits = await deps.postgres.searchChatMessages(q, {
+			role,
+			limit: Number.isFinite(n) ? n : 200,
+		});
+		// agrupa por telefone (session_id)
+		const porTelefone: Record<string, Array<{ id: number; role: string; content: string }>> = {};
+		for (const h of hits) {
+			const tel = h.session_id;
+			(porTelefone[tel] ??= []).push({ id: h.id, role: h.role, content: h.content });
+		}
+		return c.json({
+			termo: q,
+			total_mensagens: hits.length,
+			total_conversas: Object.keys(porTelefone).length,
+			telefones: Object.keys(porTelefone),
+			por_telefone: porTelefone,
+		});
+	});
+
 	/** Relatório agregado — período = 'dia' | 'semana' | 'mes'. */
 	router.get('/admin/relatorio', async (c) => {
 		const periodo = c.req.query('periodo') ?? 'dia';

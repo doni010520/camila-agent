@@ -309,6 +309,40 @@ export class PostgresClient {
 		return result.rowCount ?? 0;
 	}
 
+	/** Busca textual no histórico de conversa (n8n_chat_histories). Retorna as
+	 *  mensagens que contêm `termo` (case-insensitive), com o session_id pra
+	 *  identificar a cliente. Usado pra auditoria — ex: achar todas as conversas
+	 *  onde a Helena ofereceu/mencionou um serviço específico. */
+	async searchChatMessages(
+		termo: string,
+		opts?: { role?: 'user' | 'assistant'; limit?: number },
+	): Promise<Array<{ session_id: string; id: number; role: string; content: string }>> {
+		const params: unknown[] = [`%${termo}%`];
+		let roleFilter = '';
+		if (opts?.role) {
+			const lcType = this.roleToLangchainType(opts.role);
+			params.push(lcType);
+			roleFilter = `AND message->>'type' = $${params.length}`;
+		}
+		params.push(opts?.limit ?? 200);
+		const rows = await this.query<{ session_id: string; id: number; type: string; content: string }>(
+			`SELECT session_id, id,
+			        message->>'type' AS type,
+			        message->>'content' AS content
+			 FROM n8n_chat_histories
+			 WHERE message->>'content' ILIKE $1 ${roleFilter}
+			 ORDER BY id DESC
+			 LIMIT $${params.length}`,
+			params,
+		);
+		return rows.map((r) => ({
+			session_id: r.session_id,
+			id: r.id,
+			role: this.langchainTypeToRole(r.type ?? 'human'),
+			content: r.content ?? '',
+		}));
+	}
+
 	async loadRecentMessages(sessionId: string, limit = 30): Promise<ChatMemoryRow[]> {
 		const rows = await this.query<{ id: number; session_id: string; message: Record<string, unknown> }>(
 			`SELECT id, session_id, message
