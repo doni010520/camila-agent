@@ -3,6 +3,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { todayBRT } from '../../domain/data-brt.js';
 import { filterByTurno, isLunchBreak } from '../../domain/horario-funcionamento.js';
+import { getAgendaDoDiaCached } from '../../infra/disponibilidade-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -82,7 +83,13 @@ export function createConsultarDisponibilidade(deps: {
 					'sábado',
 				];
 
-				for (let i = 0; i < 14; i++) {
+				// Para de varrer assim que tiver dias suficientes com vaga — a Helena
+				// só oferece alguns dias por vez. No caso comum (tem vaga logo),
+				// fazemos ~4 chamadas em vez de 14, aliviando o rate limit da Trinks.
+				const MAX_DIAS_OFERTA = 4;
+				let diasComErro = 0;
+
+				for (let i = 0; i < 14 && opcoes.length < MAX_DIAS_OFERTA; i++) {
 					const d = new Date(startDate);
 					d.setDate(d.getDate() + i);
 					const dayOfWeek = d.getDay();
@@ -93,8 +100,17 @@ export function createConsultarDisponibilidade(deps: {
 					const dateStr = d.toISOString().split('T')[0];
 					if (!dateStr) continue;
 
-					const response = await trinks.listProfissionaisComAgenda(dateStr);
-					const prof = response.data.find((p) => p.id === profissionalId);
+					// try/catch POR DIA: um 429/timeout num dia não derruba a consulta
+					// inteira — pula esse dia e segue. Antes, qualquer erro num dos
+					// 14 dias travava a Helena (crash → fallback "probleminha").
+					let agenda: Awaited<ReturnType<typeof getAgendaDoDiaCached>>;
+					try {
+						agenda = await getAgendaDoDiaCached(trinks, dateStr);
+					} catch {
+						diasComErro++;
+						continue;
+					}
+					const prof = agenda.find((p) => p.id === profissionalId);
 					if (!prof || prof.horariosVagos.length === 0) continue;
 
 					// Filter by turno
@@ -118,6 +134,15 @@ export function createConsultarDisponibilidade(deps: {
 				}
 
 				if (opcoes.length === 0) {
+					// Distingue "agenda cheia" de "não consegui consultar" (rate limit/
+					// timeout). Se TODOS os dias deram erro, é técnico — não diga à
+					// cliente que está cheio (pode ter vaga).
+					if (diasComErro > 0) {
+						return {
+							status: 'erro',
+							razao: 'Não consegui consultar a agenda agora (instabilidade). Tente de novo em instantes.',
+						};
+					}
 					return { status: 'erro', razao: 'Sem horários disponíveis nos próximos 14 dias' };
 				}
 

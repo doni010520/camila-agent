@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../src/agent/tools/_registry.js';
 import { createConsultarDisponibilidade } from '../../src/agent/tools/consultar_disponibilidade.js';
+import { _resetDisponibilidadeCache } from '../../src/infra/disponibilidade-cache.js';
 
 const ctx: ToolContext = {
 	telefone: '5571999999999',
@@ -64,6 +65,8 @@ function makeTool(overrides?: {
 }
 
 describe('consultar_disponibilidade', () => {
+	beforeEach(() => _resetDisponibilidadeCache());
+
 	it('returns available slots filtered by turno tarde', async () => {
 		const { tool } = makeTool();
 		const result = await tool.handler({ servico: 'Volume Brasileiro', hora_e_turno: 'tarde' }, ctx);
@@ -136,5 +139,50 @@ describe('consultar_disponibilidade', () => {
 		if (result.status === 'erro') {
 			expect(result.razao).toContain('Sem horários');
 		}
+	});
+
+	// ── Resiliência a rate limit (429) da Trinks ──
+
+	it('🛡️ 429 em TODOS os dias → erro técnico (não diz "cheio")', async () => {
+		const { tool, trinks } = makeTool();
+		trinks.listProfissionaisComAgenda.mockRejectedValue(new Error('GET ... returned 429'));
+		const result = await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
+		expect(result.status).toBe('erro');
+		if (result.status === 'erro') {
+			expect(result.razao).toContain('instabilidade');
+			expect(result.razao).not.toContain('Sem horários');
+		}
+	});
+
+	it('🛡️ 429 em alguns dias não derruba a consulta — retorna os dias que deram certo', async () => {
+		const { tool, trinks } = makeTool();
+		let call = 0;
+		trinks.listProfissionaisComAgenda.mockImplementation(async () => {
+			call++;
+			// 1ª data falha (429), demais funcionam
+			if (call === 1) throw new Error('GET ... returned 429');
+			return {
+				data: [
+					{
+						id: 170223,
+						nome: 'Camila Rosario',
+						horariosVagos: ['14:00', '14:30', '15:00', '15:30', '16:00'],
+						intervalosVagos: [{ inicio: '14:00', fim: '18:00' }],
+					},
+				],
+			};
+		});
+		const result = await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
+		expect(result.status).toBe('ok');
+		if (result.status === 'ok') {
+			expect((result.opcoes as unknown[]).length).toBeGreaterThan(0);
+		}
+	});
+
+	it('⚡ early-exit: para de chamar a Trinks após juntar dias suficientes', async () => {
+		const { tool, trinks } = makeTool();
+		await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
+		// MAX_DIAS_OFERTA=4 → no máximo ~4 chamadas, nunca os 14 dias completos
+		expect(trinks.listProfissionaisComAgenda.mock.calls.length).toBeLessThanOrEqual(5);
 	});
 });
