@@ -6,8 +6,12 @@ const promptPath = resolve(import.meta.dirname, '../../src/agent/prompt.md');
 const prompt = readFileSync(promptPath, 'utf-8');
 
 describe('Helena prompt v14', () => {
-	it('is under 12k characters (SPEC §17)', () => {
-		expect(prompt.length).toBeLessThan(12000);
+	it('is under 14k characters (enxuto)', () => {
+		// Teto pra manter o prompt enxuto (foco + custo de tokens). Subiu de 12k
+		// pra 14k após regras críticas de produção (anti-alucinação de serviço,
+		// saudação, serviço obrigatório antes de consultar, não expor VIP).
+		// ~14k chars ≈ 3,5k tokens de system prompt — folgado pro gpt-4.1-mini.
+		expect(prompt.length).toBeLessThan(14000);
 	});
 
 	it('does NOT reference ghost tool names (SPEC §10)', () => {

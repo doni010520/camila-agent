@@ -53,7 +53,14 @@ export class AppOpenAIClient {
 
 	constructor(config?: OpenAIClientConfig) {
 		const env = getEnv();
-		this.client = new OpenAI({ apiKey: config?.apiKey ?? env.OPENAI_API_KEY });
+		this.client = new OpenAI({
+			apiKey: config?.apiKey ?? env.OPENAI_API_KEY,
+			// "Premature close"/APIConnectionError de rede com a OpenAI travava a
+			// Helena. O SDK retenta conexão/429/5xx com backoff exponencial —
+			// aumentamos o teto e damos timeout explícito por request.
+			maxRetries: 4,
+			timeout: 60_000,
+		});
 		this.model = config?.model ?? env.OPENAI_MODEL;
 		this.modelVision = config?.modelVision ?? env.OPENAI_MODEL_VISION;
 		this.modelWhisper = config?.modelWhisper ?? env.OPENAI_MODEL_WHISPER;
