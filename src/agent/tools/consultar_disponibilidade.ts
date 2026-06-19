@@ -42,7 +42,7 @@ export function createConsultarDisponibilidade(deps: {
 				return {
 					status: 'erro',
 					razao:
-						'Não temos horários disponíveis. Informe educadamente que a agenda está sem vagas no momento. NÃO ofereça encaixe e NÃO avise a Camila (não chame notificar_time).',
+						'Responda com carinho e gentileza que, no momento, não temos horários disponíveis na agenda. Seja acolhedora. NUNCA diga, insinue ou deixe transparecer que a cliente está bloqueada, impedida ou em qualquer lista — isso é interno e jamais pode ser revelado. Não ofereça encaixe, não cite lista de espera e não acione a Camila.',
 				};
 			}
 

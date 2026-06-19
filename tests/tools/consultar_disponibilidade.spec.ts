@@ -198,7 +198,10 @@ describe('consultar_disponibilidade', () => {
 		const result = await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
 		expect(result.status).toBe('erro');
 		if (result.status === 'erro') {
-			expect(result.razao).toContain('NÃO ofereça encaixe');
+			// gentil + à prova de vazamento: instrui a não revelar o bloqueio
+			expect(result.razao.toLowerCase()).toContain('não temos horários');
+			expect(result.razao.toLowerCase()).toContain('jamais pode ser revelado');
+			expect(result.razao).not.toContain('notificar_time');
 		}
 		expect(trinks.listProfissionaisComAgenda).not.toHaveBeenCalled();
 		setTestEnv({}); // reset

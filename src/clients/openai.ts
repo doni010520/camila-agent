@@ -6,6 +6,30 @@ import type {
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
+import { withRetry } from '../infra/retry.js';
+
+/**
+ * Detecta erro transitório de conexão com a OpenAI. O caso recorrente é
+ * "Invalid response body ... Premature close" — a conexão (keep-alive) é
+ * fechada no meio da leitura do corpo. O retry interno do SDK nem sempre
+ * cobre isso (acontece no parsing do body), então retentamos por fora, o
+ * que força uma request nova (conexão fresca).
+ */
+function isTransientConnError(err: unknown): boolean {
+	const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+	return (
+		msg.includes('premature close') ||
+		msg.includes('terminated') ||
+		msg.includes('econnreset') ||
+		msg.includes('socket hang up') ||
+		msg.includes('other side closed') ||
+		msg.includes('fetch failed') ||
+		msg.includes('connection error') ||
+		msg.includes('network') ||
+		msg.includes('timeout') ||
+		msg.includes('etimedout')
+	);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -55,10 +79,9 @@ export class AppOpenAIClient {
 		const env = getEnv();
 		this.client = new OpenAI({
 			apiKey: config?.apiKey ?? env.OPENAI_API_KEY,
-			// "Premature close"/APIConnectionError de rede com a OpenAI travava a
-			// Helena. O SDK retenta conexão/429/5xx com backoff exponencial —
-			// aumentamos o teto e damos timeout explícito por request.
-			maxRetries: 4,
+			// SDK retenta 429/5xx/conexão internamente; envolvemos com withRetry
+			// por fora pra cobrir "Premature close" no parsing do body.
+			maxRetries: 2,
 			timeout: 60_000,
 		});
 		this.model = config?.model ?? env.OPENAI_MODEL;
@@ -76,13 +99,23 @@ export class AppOpenAIClient {
 			'OpenAI chat request',
 		);
 
-		const response = await this.client.chat.completions.create({
-			model,
-			messages: opts.messages,
-			tools: opts.tools?.length ? opts.tools : undefined,
-			tool_choice: opts.tools?.length ? 'auto' : undefined,
-			temperature: opts.temperature ?? 0.3,
-		});
+		const response = await withRetry(
+			() =>
+				this.client.chat.completions.create({
+					model,
+					messages: opts.messages,
+					tools: opts.tools?.length ? opts.tools : undefined,
+					tool_choice: opts.tools?.length ? 'auto' : undefined,
+					temperature: opts.temperature ?? 0.3,
+				}),
+			{
+				maxRetries: 3,
+				baseDelayMs: 600,
+				shouldRetry: isTransientConnError,
+				logger: this.log,
+				label: 'openai:chat',
+			},
+		);
 
 		const choice = response.choices[0];
 		if (!choice) throw new Error('OpenAI returned no choices');
