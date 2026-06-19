@@ -313,6 +313,18 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Diagnóstico: checa se um telefone está na lista de bloqueados (sempre
+	 * "sem vagas"). Não expõe a lista inteira — só responde sim/não.
+	 *   GET /admin/bloqueio/check?tel=5571993536700
+	 */
+	router.get('/admin/bloqueio/check', async (c) => {
+		const tel = c.req.query('tel');
+		if (!tel) return c.json({ status: 'erro', razao: 'tel obrigatório' }, 400);
+		const { isNumeroBloqueado } = await import('../domain/bloqueio.js');
+		return c.json({ telefone: tel, bloqueado: isNumeroBloqueado(tel) });
+	});
+
+	/**
 	 * Busca cliente(s) na Trinks por nome — retorna id, nome e telefones.
 	 * Útil pra achar o telefone de alguém pelo nome (ex: pra bloquear).
 	 *   GET /admin/trinks/cliente?nome=Kelen
