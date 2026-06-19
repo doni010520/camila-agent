@@ -79,8 +79,15 @@ export class AppOpenAIClient {
 		const env = getEnv();
 		this.client = new OpenAI({
 			apiKey: config?.apiKey ?? env.OPENAI_API_KEY,
-			// SDK retenta 429/5xx/conexão internamente; envolvemos com withRetry
-			// por fora pra cobrir "Premature close" no parsing do body.
+			// CRÍTICO: força o SDK a usar o fetch nativo do Node 22 (undici), em
+			// vez do node-fetch@2.x que vem como polyfill padrão. O node-fetch 2.x
+			// tem bug conhecido com streams gzip em keep-alive: "Premature close"
+			// no Gunzip. Causa raiz do erro recorrente — sem isso, toda a
+			// configuração de pool/retry era inútil porque nem chegava no undici.
+			// biome-ignore lint/suspicious/noExplicitAny: tipos do node-fetch (SDK 4.x)
+			// e do fetch nativo do Node 22 não casam perfeitamente, mas runtime é
+			// 100% compatível. Pular checagem de tipo aqui é intencional.
+			fetch: globalThis.fetch as any,
 			maxRetries: 2,
 			timeout: 60_000,
 		});
