@@ -2,8 +2,12 @@ import type { ChatMemoryRow, PostgresClient } from '../clients/postgres.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
 
-/** Max messages to load as context for the agent */
-const MAX_MESSAGES = 30;
+/** Max messages to load as context for the agent.
+ *  Reduzido de 30 → 20 pra encurtar requests à OpenAI: clientes recorrentes
+ *  com 30 turnos de histórico viravam ~2-3k tokens de prompt, e geração lenta
+ *  do gpt-4.1-mini com tools deixava janela pra "Premature close" da OpenAI
+ *  cortar a resposta. 20 mensagens (~10 trocas) é contexto suficiente. */
+const MAX_MESSAGES = 20;
 
 export class ChatMemory {
 	private readonly pg: PostgresClient;

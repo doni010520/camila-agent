@@ -109,8 +109,11 @@ export class AppOpenAIClient {
 					temperature: opts.temperature ?? 0.3,
 				}),
 			{
-				maxRetries: 3,
-				baseDelayMs: 600,
+				// 5 retries × baseDelay 1500 com cap 16s cobre rajadas longas de
+				// Premature close (já vimos sequência de ~10 falhas seguidas).
+				maxRetries: 5,
+				baseDelayMs: 1500,
+				maxDelayMs: 16_000,
 				shouldRetry: isTransientConnError,
 				logger: this.log,
 				label: 'openai:chat',
