@@ -62,8 +62,12 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			const env = (await import('../infra/env.js')).getEnv();
 			const errMsg = err instanceof Error ? err.message : 'unknown';
 			try {
+				// Notificação técnica vai pro privado do dev (Adonias), não pro
+				// grupo. Notificações operacionais (clientes) continuam no grupo
+				// se for o caso, mas crashes técnicos são silenciosos pra o time.
+				const destino = env.UAZAPI_DEV_PHONE ?? env.UAZAPI_GRUPO_TIME;
 				await deps.uazapi.sendText(
-					env.UAZAPI_GRUPO_TIME,
+					destino,
 					`🚨 *Helena travou*\n\nCliente: ${nomeCliente ?? telefone.slice(-4)}\nErro: ${errMsg.slice(0, 200)}\n\nA cliente recebeu fallback "tive um probleminha". Verificar se precisa intervir.`,
 				);
 			} catch {

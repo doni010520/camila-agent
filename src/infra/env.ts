@@ -47,8 +47,10 @@ const envSchema = z.object({
 	DEBOUNCE_MS: z.coerce.number().default(8000),
 	AGENT_MAX_TURNS: z.coerce.number().default(6),
 
-	// Dev notifications (optional — relatório de erros privado)
-	UAZAPI_DEV_PHONE: z.string().optional(),
+	/** Telefone do dev (Adonias) — recebe notificações técnicas no privado:
+	 *  crash da Helena, alertas de erro de tool, relatório de erros. NUNCA é
+	 *  usado pra falar com cliente. Default = número do Adonias. */
+	UAZAPI_DEV_PHONE: z.string().default('5571993061031'),
 
 	/** Lista de telefones (CSV) pra quem a Helena SEMPRE diz que não há vagas e
 	 *  NUNCA oferece encaixe/avisa a Camila. Ex: "5571999998888,5571988887777".

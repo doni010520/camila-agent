@@ -20,6 +20,7 @@ import { TrinksClient } from './clients/trinks.js';
 import { UazapiClient } from './clients/uazapi.js';
 import { LeadManager } from './domain/lead.js';
 import { getEnv } from './infra/env.js';
+import { configureHttpPool } from './infra/http-pool.js';
 import { rootLogger } from './infra/logger.js';
 import { Scheduler } from './infra/scheduler.js';
 import { runDetectarConflitos } from './jobs/detectar-conflitos.js';
@@ -46,6 +47,9 @@ export interface BootResult {
 export async function bootApp(): Promise<BootResult> {
 	const env = getEnv();
 	const log = rootLogger;
+
+	// ── HTTP pool: configura ANTES de qualquer fetch (fix Premature close) ──
+	configureHttpPool();
 
 	// ── Instantiate clients ──
 	const trinks = new TrinksClient();

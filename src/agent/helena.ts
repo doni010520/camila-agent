@@ -171,7 +171,9 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 				const razao = typeof toolResult.razao === 'string' ? toolResult.razao : 'erro sem razão';
 				recordToolError(tc.function.name, razao, {
 					sendAlert: async (text) => {
-						await deps.uazapi.sendText(env.UAZAPI_GRUPO_TIME, text);
+						// Alertas técnicos vão pro privado do dev, não pro grupo.
+						const destino = env.UAZAPI_DEV_PHONE ?? env.UAZAPI_GRUPO_TIME;
+						await deps.uazapi.sendText(destino, text);
 					},
 				});
 			}
