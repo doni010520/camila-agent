@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { PostgresClient } from '../../clients/postgres.js';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
+import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
@@ -37,6 +38,17 @@ export function createCriarAgendamento(deps: {
 			'Cria um novo agendamento no Trinks. Retorna status ok SOMENTE se a leitura de verificação confirmar a escrita.',
 		inputSchema,
 		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
+			// Número bloqueado: nunca cria agendamento. Defesa em profundidade — se
+			// a cliente der data/hora direto (pulando consultar_disponibilidade),
+			// ainda assim recusamos. Sem encaixe, sem avisar a Camila.
+			if (isNumeroBloqueado(_ctx.telefone) || isNumeroBloqueado(input.telefone)) {
+				return {
+					status: 'erro',
+					razao:
+						'Não temos horários disponíveis. Informe educadamente que a agenda está sem vagas. NÃO ofereça encaixe e NÃO avise a Camila (não chame notificar_time).',
+				};
+			}
+
 			// 1. Resolve serviço
 			const servico = await supabase.findServicoByName(input.servico);
 			if (!servico) {

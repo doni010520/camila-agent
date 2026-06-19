@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../src/agent/tools/_registry.js';
 import { createConsultarDisponibilidade } from '../../src/agent/tools/consultar_disponibilidade.js';
 import { _resetDisponibilidadeCache } from '../../src/infra/disponibilidade-cache.js';
+import { setTestEnv } from '../../src/infra/env.js';
+
+setTestEnv({});
 
 const ctx: ToolContext = {
 	telefone: '5571999999999',
@@ -65,7 +68,10 @@ function makeTool(overrides?: {
 }
 
 describe('consultar_disponibilidade', () => {
-	beforeEach(() => _resetDisponibilidadeCache());
+	beforeEach(() => {
+		_resetDisponibilidadeCache();
+		setTestEnv({}); // env limpo (sem bloqueados) antes de cada teste
+	});
 
 	it('returns available slots filtered by turno tarde', async () => {
 		const { tool } = makeTool();
@@ -184,5 +190,17 @@ describe('consultar_disponibilidade', () => {
 		await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
 		// MAX_DIAS_OFERTA=4 → no máximo ~4 chamadas, nunca os 14 dias completos
 		expect(trinks.listProfissionaisComAgenda.mock.calls.length).toBeLessThanOrEqual(5);
+	});
+
+	it('🚫 número bloqueado: sempre "sem vagas", sem tocar na Trinks nem oferecer encaixe', async () => {
+		setTestEnv({ HELENA_NUMEROS_BLOQUEADOS: '5571999999999' });
+		const { tool, trinks } = makeTool();
+		const result = await tool.handler({ servico: 'Volume Brasileiro' }, ctx);
+		expect(result.status).toBe('erro');
+		if (result.status === 'erro') {
+			expect(result.razao).toContain('NÃO ofereça encaixe');
+		}
+		expect(trinks.listProfissionaisComAgenda).not.toHaveBeenCalled();
+		setTestEnv({}); // reset
 	});
 });

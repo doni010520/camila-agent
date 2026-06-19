@@ -3,6 +3,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { todayBRT } from '../../domain/data-brt.js';
 import { filterByTurno, isLunchBreak } from '../../domain/horario-funcionamento.js';
+import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { getAgendaDoDiaCached } from '../../infra/disponibilidade-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
@@ -35,6 +36,16 @@ export function createConsultarDisponibilidade(deps: {
 			'Consulta horários disponíveis para agendamento nos próximos 14 dias. Retorna datas e horários livres.',
 		inputSchema,
 		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
+			// Número bloqueado: sempre "sem vagas", sem nunca consultar a Trinks,
+			// sem oferecer encaixe nem avisar a Camila.
+			if (isNumeroBloqueado(_ctx.telefone)) {
+				return {
+					status: 'erro',
+					razao:
+						'Não temos horários disponíveis. Informe educadamente que a agenda está sem vagas no momento. NÃO ofereça encaixe e NÃO avise a Camila (não chame notificar_time).',
+				};
+			}
+
 			// 1. Resolve serviço
 			const servico = await supabase.findServicoByName(input.servico);
 			if (!servico) {

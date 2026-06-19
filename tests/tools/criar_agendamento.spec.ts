@@ -280,4 +280,17 @@ describe('criar_agendamento', () => {
 		expect(result.status).toBe('erro');
 		expect(trinks.createAgendamento).not.toHaveBeenCalled();
 	});
+
+	it('🚫 número bloqueado: recusa sem nem tocar na Trinks', async () => {
+		setTestEnv({ HELENA_NUMEROS_BLOQUEADOS: '5571999999999' });
+		const { tool, trinks } = makeDeps();
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+		expect(trinks.listProfissionaisComAgenda).not.toHaveBeenCalled();
+		setTestEnv({}); // reset pra não vazar pros outros testes
+	});
 });

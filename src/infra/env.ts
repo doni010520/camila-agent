@@ -49,6 +49,11 @@ const envSchema = z.object({
 
 	// Dev notifications (optional — relatório de erros privado)
 	UAZAPI_DEV_PHONE: z.string().optional(),
+
+	/** Lista de telefones (CSV) pra quem a Helena SEMPRE diz que não há vagas e
+	 *  NUNCA oferece encaixe/avisa a Camila. Ex: "5571999998888,5571988887777".
+	 *  Comparação pelos últimos 8 dígitos (robusto a DDI/DDD/9º dígito). */
+	HELENA_NUMEROS_BLOQUEADOS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
