@@ -313,6 +313,29 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Busca cliente(s) na Trinks por nome — retorna id, nome e telefones.
+	 * Útil pra achar o telefone de alguém pelo nome (ex: pra bloquear).
+	 *   GET /admin/trinks/cliente?nome=Kelen
+	 */
+	router.get('/admin/trinks/cliente', async (c) => {
+		const nome = c.req.query('nome');
+		if (!nome) return c.json({ status: 'erro', razao: 'nome obrigatório' }, 400);
+		try {
+			const r = await deps.trinks.listClientes({ nome, pageSize: 50 });
+			const clientes = (r.data ?? []).map((cl) => ({
+				id: cl.id,
+				nome: cl.nome,
+				telefones: (cl.telefones ?? []).map(
+					(t) => `${t.ddi ?? ''}${t.ddd ?? ''}${t.telefone}`,
+				),
+			}));
+			return c.json({ nome, total: clientes.length, clientes });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * JSON CRU de um agendamento direto do Trinks (todos os campos, sem schema).
 	 * Pra descobrir se há campo de data de criação/auditoria.
 	 *   GET /admin/trinks/raw/:id
