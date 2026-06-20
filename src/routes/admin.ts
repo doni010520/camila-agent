@@ -329,13 +329,33 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 			NO_PROXY: process.env.NO_PROXY ?? process.env.no_proxy ?? null,
 			OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? null,
 		};
+		const mode = c.req.query('mode') ?? 'models';
+		const accept = c.req.query('accept'); // 'identity' pra testar sem compressão
 		const results: Array<Record<string, unknown>> = [];
 		for (let i = 0; i < n; i++) {
 			const t0 = Date.now();
 			try {
-				const res = await fetch('https://api.openai.com/v1/models', {
-					headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
-				});
+				const headers: Record<string, string> = {
+					Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+				};
+				if (accept) headers['Accept-Encoding'] = accept;
+				let res: Response;
+				if (mode === 'chat') {
+					// POST real ao /chat/completions (reproduz a condição do erro:
+					// resposta grande, dinâmica, chunked + brotli pela Cloudflare).
+					headers['Content-Type'] = 'application/json';
+					res = await fetch('https://api.openai.com/v1/chat/completions', {
+						method: 'POST',
+						headers,
+						body: JSON.stringify({
+							model: env.OPENAI_MODEL,
+							messages: [{ role: 'user', content: 'Liste 40 nomes brasileiros femininos, um por linha.' }],
+							max_tokens: 800,
+						}),
+					});
+				} else {
+					res = await fetch('https://api.openai.com/v1/models', { headers });
+				}
 				const h: Record<string, string> = {};
 				res.headers.forEach((v, k) => {
 					h[k] = v;
