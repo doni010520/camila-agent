@@ -56,6 +56,8 @@ describe('Helena prompt v14', () => {
 			'{{sinal_pago}}',
 			'{{pdf_catalogo_enviado_h}}',
 			'{{horario_expediente}}',
+			'{{recesso_info}}',
+			'{{catalogo_precos}}',
 			'{{historico_cliente}}',
 		];
 		for (const v of vars) {

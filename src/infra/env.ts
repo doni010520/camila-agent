@@ -56,6 +56,13 @@ const envSchema = z.object({
 	 *  NUNCA oferece encaixe/avisa a Camila. Ex: "5571999998888,5571988887777".
 	 *  Comparação pelos últimos 8 dígitos (robusto a DDI/DDD/9º dígito). */
 	HELENA_NUMEROS_BLOQUEADOS: z.string().optional(),
+
+	/** Período de recesso da Camila (YYYY-MM-DD). Durante esse intervalo, se a
+	 *  cliente pedir pra falar com a Camila, a Helena informa o recesso e que ela
+	 *  retorna depois — sem transferir/desativar a IA. Ambos opcionais; só ativa
+	 *  se os dois estiverem setados. Ex: INICIO=2026-06-27 FIM=2026-07-01. */
+	HELENA_RECESSO_INICIO: z.string().optional(),
+	HELENA_RECESSO_FIM: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

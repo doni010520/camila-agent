@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { UazapiClient } from '../../clients/uazapi.js';
 import type { LeadManager } from '../../domain/lead.js';
+import { dataRetornoRecesso, estaEmRecesso } from '../../domain/recesso.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 import { createNotificarTime } from './notificar_time.js';
 
@@ -23,6 +24,31 @@ export function createTransferirHumano(deps: {
 		description: 'Desativa a IA para este cliente e notifica a Camila para atendimento humano.',
 		inputSchema,
 		handler: async (input: Input, ctx: ToolContext): Promise<ToolResult> => {
+			// RECESSO: durante o recesso da Camila, NÃO desativa a IA nem promete
+			// que ela responde "em breve". Registra o pedido pra Camila (notificar_time)
+			// e instrui a Helena a informar o recesso + data de retorno.
+			if (estaEmRecesso()) {
+				const retorno = dataRetornoRecesso();
+				try {
+					await notificarTime.handler(
+						{
+							motivo: `Pedido durante recesso: ${input.motivo}`,
+							contexto: `Cliente ${ctx.lead.nome ?? 'não identificada'} (${input.telefone}) quis falar com a Camila durante o recesso. Retornar quando voltar.`,
+							urgencia: 'normal',
+						},
+						ctx,
+					);
+				} catch {
+					/* best-effort */
+				}
+				return {
+					status: 'ok',
+					ia_ativa: true,
+					em_recesso: true,
+					mensagem: `A Camila está de recesso e retorna no dia ${retorno}. Informe à cliente, com carinho, que assim que a Camila voltar (${retorno}) ela vai falar pessoalmente com ela. NÃO diga que vai chamar a Camila agora. Continue ajudando no que puder.`,
+				};
+			}
+
 			// 1. Disable IA for this lead
 			try {
 				await leadManager.setIaAtiva(input.telefone, false);

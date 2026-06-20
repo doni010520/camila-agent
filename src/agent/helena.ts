@@ -8,6 +8,7 @@ import type { UazapiClient } from '../clients/uazapi.js';
 import { nowBRT } from '../domain/data-brt.js';
 import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
+import { recessoInfoParaPrompt } from '../domain/recesso.js';
 import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
@@ -33,7 +34,18 @@ export interface AgentDeps {
 	logger?: Logger;
 }
 
-function buildSystemPrompt(lead: LeadCamilaRow): string {
+/** Tabela de preços real (cache sincronizado da Trinks). A Helena deve usar
+ *  ESTES valores — nunca inventar. Filtra serviços sem preço real. */
+function formatCatalogoPrecos(servicos: Array<{ nome: string; preco?: number | null }>): string {
+	const validos = servicos
+		.filter((s) => (s.preco ?? 0) > 1)
+		.sort((a, b) => a.nome.localeCompare(b.nome));
+	if (validos.length === 0) return '';
+	const linhas = validos.map((s) => `- ${s.nome}: R$${s.preco}`);
+	return ['## Tabela de preços (fonte: Trinks — use SEMPRE estes valores, NUNCA invente)', '', ...linhas].join('\n');
+}
+
+function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string {
 	// Historical agendamentos (from lead metadata or empty)
 	const historico = lead.ultimo_servico
 		? `Último serviço: ${lead.ultimo_servico}${lead.ultimo_agendamento_em ? ` em ${lead.ultimo_agendamento_em}` : ''}`
@@ -53,6 +65,8 @@ function buildSystemPrompt(lead: LeadCamilaRow): string {
 		.replace('{{sinal_pago}}', lead.sinal_pago ? 'sim' : 'não')
 		.replace('{{pdf_catalogo_enviado_h}}', pdfH)
 		.replace('{{horario_expediente}}', formatScheduleForPrompt())
+		.replace('{{recesso_info}}', recessoInfoParaPrompt())
+		.replace('{{catalogo_precos}}', catalogoPrecos)
 		.replace('{{historico_cliente}}', historico);
 }
 
@@ -65,8 +79,9 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 	const history = await deps.memory.loadRecent(ctx.telefone);
 	const historyMessages = ChatMemory.toOpenAIMessages(history);
 
-	// 2. Build system prompt
-	const systemPrompt = buildSystemPrompt(ctx.lead);
+	// 2. Build system prompt (com tabela de preços real da Trinks)
+	const servicos = await deps.supabase.listServicos().catch(() => []);
+	const systemPrompt = buildSystemPrompt(ctx.lead, formatCatalogoPrecos(servicos));
 
 	// 3. Build messages array
 	const messages: ChatCompletionMessageParam[] = [

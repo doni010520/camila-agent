@@ -61,7 +61,9 @@ function makeDeps(overrides?: {
 		}),
 	};
 
-	const supabase = {};
+	const supabase = {
+		listServicos: vi.fn().mockResolvedValue([]),
+	};
 
 	const memory = {
 		loadRecent: vi.fn().mockResolvedValue([]),

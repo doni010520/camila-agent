@@ -71,6 +71,7 @@ describe('E2E: fluxo fantasma rejeitado', () => {
 					duracao_em_minutos: 120,
 					preco: 160,
 				}),
+			listServicos: vi.fn().mockResolvedValue([]),
 			upsertAgendamento: vi.fn(),
 			raw: {
 				from: vi
