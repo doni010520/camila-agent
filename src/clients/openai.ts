@@ -70,6 +70,7 @@ export interface OpenAIClientConfig {
 
 export class AppOpenAIClient {
 	private readonly client: OpenAI;
+	private readonly apiKey: string;
 	private readonly model: string;
 	private readonly modelVision: string;
 	private readonly modelWhisper: string;
@@ -77,16 +78,12 @@ export class AppOpenAIClient {
 
 	constructor(config?: OpenAIClientConfig) {
 		const env = getEnv();
-		this.client = new OpenAI({
-			apiKey: config?.apiKey ?? env.OPENAI_API_KEY,
-			// Usa o node-fetch padrão do SDK (NÃO o fetch nativo) — o streaming do
-			// SDK foi desenhado pra ele e o custom fetch travava o stream (47s →
-			// Connection error). O bug do gunzip do node-fetch só acontecia em
-			// respostas GRANDES não-streaming; com streaming a resposta vem em
-			// chunks pequenos e não aciona o bug.
-			maxRetries: 2,
-			timeout: 60_000,
-		});
+		this.apiKey = config?.apiKey ?? env.OPENAI_API_KEY;
+		// SDK mantido só pra Whisper/Vision. O chat() crítico usa fetch nativo
+		// DIRETO (ver chat()) — testes provaram que toda falha de "Premature
+		// close"/"invalid content-length" vinha do node-fetch interno do SDK,
+		// enquanto o fetch nativo direto roda 100% limpo.
+		this.client = new OpenAI({ apiKey: this.apiKey, maxRetries: 2, timeout: 60_000 });
 		this.model = config?.model ?? env.OPENAI_MODEL;
 		this.modelVision = config?.modelVision ?? env.OPENAI_MODEL_VISION;
 		this.modelWhisper = config?.modelWhisper ?? env.OPENAI_MODEL_WHISPER;
@@ -102,95 +99,71 @@ export class AppOpenAIClient {
 			'OpenAI chat request',
 		);
 
-		// STREAMING: causa raiz do "Premature close"/"invalid content-length" era
-		// a OpenAI/Cloudflare cortar respostas grandes bufferizadas (chunked+br)
-		// quando a geração demora (vimos chamadas de 40s+). Em streaming os tokens
-		// chegam incrementalmente — a conexão fica ativa e não há corpo único
-		// grande pra cortar. Remontamos o objeto completo (content + tool_calls)
-		// no mesmo formato da resposta não-streaming.
-		const assembled = await withRetry(
-			() =>
-				this.streamAndAssemble({
-					model,
-					messages: opts.messages,
-					tools: opts.tools?.length ? opts.tools : undefined,
-					tool_choice: opts.tools?.length ? 'auto' : undefined,
-					temperature: opts.temperature ?? 0.3,
-				}),
+		// FETCH NATIVO DIRETO (não o SDK). Diagnóstico extensivo provou que TODA
+		// falha de "Premature close"/"invalid content-length"/"Connection error"
+		// vinha do node-fetch interno do SDK 4.x. O fetch nativo do Node 22
+		// (undici) chamando a API direto roda 100% limpo (0 falhas em dezenas de
+		// testes), incluindo respostas lentas de 40s+. Mantemos o mesmo formato
+		// de resposta pro resto do código.
+		const body = {
+			model,
+			messages: opts.messages,
+			tools: opts.tools?.length ? opts.tools : undefined,
+			tool_choice: opts.tools?.length ? ('auto' as const) : undefined,
+			temperature: opts.temperature ?? 0.3,
+		};
+
+		const json = await withRetry(
+			async () => {
+				const res = await fetch('https://api.openai.com/v1/chat/completions', {
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${this.apiKey}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(body),
+				});
+				if (!res.ok) {
+					const txt = await res.text().catch(() => '');
+					// 429/5xx → retryável (isTransientConnError não pega status, então
+					// sinalizamos via mensagem). 4xx de input → não retenta.
+					const retryable = res.status === 429 || res.status >= 500;
+					throw new Error(
+						`OpenAI ${res.status}${retryable ? ' (transient)' : ''}: ${txt.slice(0, 200)}`,
+					);
+				}
+				return (await res.json()) as OpenAI.Chat.Completions.ChatCompletion;
+			},
 			{
 				maxRetries: 5,
 				baseDelayMs: 1500,
 				maxDelayMs: 16_000,
-				shouldRetry: isTransientConnError,
+				shouldRetry: (err) =>
+					isTransientConnError(err) ||
+					(err instanceof Error && err.message.includes('(transient)')),
 				logger: this.log,
 				label: 'openai:chat',
 			},
 		);
 
+		const choice = json.choices?.[0];
+		if (!choice) throw new Error('OpenAI returned no choices');
+
 		this.log.info(
 			{
 				model,
-				finishReason: assembled.finishReason,
-				promptTokens: assembled.usage?.prompt_tokens,
-				completionTokens: assembled.usage?.completion_tokens,
+				finishReason: choice.finish_reason,
+				promptTokens: json.usage?.prompt_tokens,
+				completionTokens: json.usage?.completion_tokens,
 			},
 			'OpenAI chat response',
 		);
 
-		return assembled;
-	}
-
-	/** Faz a chamada em streaming e remonta o resultado final (content +
-	 *  tool_calls fragmentados em deltas) no formato ChatResult. */
-	private async streamAndAssemble(params: {
-		model: string;
-		messages: ChatCompletionMessageParam[];
-		tools?: ChatCompletionTool[];
-		tool_choice?: 'auto';
-		temperature: number;
-	}): Promise<ChatResult> {
-		const stream = await this.client.chat.completions.create({
-			...params,
-			stream: true,
-			stream_options: { include_usage: true },
-		});
-
-		let content = '';
-		const toolCalls = new Map<
-			number,
-			{ id: string; type: 'function'; function: { name: string; arguments: string } }
-		>();
-		let finishReason: string | null = null;
-		let usage: OpenAI.CompletionUsage | undefined;
-
-		for await (const chunk of stream) {
-			const choice = chunk.choices[0];
-			if (choice) {
-				if (choice.delta?.content) content += choice.delta.content;
-				for (const tc of choice.delta?.tool_calls ?? []) {
-					const idx = tc.index;
-					let acc = toolCalls.get(idx);
-					if (!acc) {
-						acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
-						toolCalls.set(idx, acc);
-					}
-					if (tc.id) acc.id = tc.id;
-					if (tc.function?.name) acc.function.name += tc.function.name;
-					if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
-				}
-				if (choice.finish_reason) finishReason = choice.finish_reason;
-			}
-			if (chunk.usage) usage = chunk.usage;
-		}
-
-		const tcList = [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
-		const message = {
-			role: 'assistant',
-			content: content || null,
-			...(tcList.length ? { tool_calls: tcList } : {}),
-		} as OpenAI.Chat.Completions.ChatCompletionMessage;
-
-		return { message, finishReason, usage };
+		return {
+			message: choice.message,
+			finishReason: choice.finish_reason,
+			usage: json.usage ?? undefined,
+		};
 	}
 
 	// ── Whisper (audio → text) ──
