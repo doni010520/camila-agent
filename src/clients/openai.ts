@@ -106,9 +106,15 @@ export class AppOpenAIClient {
 			'OpenAI chat request',
 		);
 
-		const response = await withRetry(
+		// STREAMING: causa raiz do "Premature close"/"invalid content-length" era
+		// a OpenAI/Cloudflare cortar respostas grandes bufferizadas (chunked+br)
+		// quando a geração demora (vimos chamadas de 40s+). Em streaming os tokens
+		// chegam incrementalmente — a conexão fica ativa e não há corpo único
+		// grande pra cortar. Remontamos o objeto completo (content + tool_calls)
+		// no mesmo formato da resposta não-streaming.
+		const assembled = await withRetry(
 			() =>
-				this.client.chat.completions.create({
+				this.streamAndAssemble({
 					model,
 					messages: opts.messages,
 					tools: opts.tools?.length ? opts.tools : undefined,
@@ -116,8 +122,6 @@ export class AppOpenAIClient {
 					temperature: opts.temperature ?? 0.3,
 				}),
 			{
-				// 5 retries × baseDelay 1500 com cap 16s cobre rajadas longas de
-				// Premature close (já vimos sequência de ~10 falhas seguidas).
 				maxRetries: 5,
 				baseDelayMs: 1500,
 				maxDelayMs: 16_000,
@@ -127,24 +131,70 @@ export class AppOpenAIClient {
 			},
 		);
 
-		const choice = response.choices[0];
-		if (!choice) throw new Error('OpenAI returned no choices');
-
 		this.log.info(
 			{
 				model,
-				finishReason: choice.finish_reason,
-				promptTokens: response.usage?.prompt_tokens,
-				completionTokens: response.usage?.completion_tokens,
+				finishReason: assembled.finishReason,
+				promptTokens: assembled.usage?.prompt_tokens,
+				completionTokens: assembled.usage?.completion_tokens,
 			},
 			'OpenAI chat response',
 		);
 
-		return {
-			message: choice.message,
-			finishReason: choice.finish_reason,
-			usage: response.usage ?? undefined,
-		};
+		return assembled;
+	}
+
+	/** Faz a chamada em streaming e remonta o resultado final (content +
+	 *  tool_calls fragmentados em deltas) no formato ChatResult. */
+	private async streamAndAssemble(params: {
+		model: string;
+		messages: ChatCompletionMessageParam[];
+		tools?: ChatCompletionTool[];
+		tool_choice?: 'auto';
+		temperature: number;
+	}): Promise<ChatResult> {
+		const stream = await this.client.chat.completions.create({
+			...params,
+			stream: true,
+			stream_options: { include_usage: true },
+		});
+
+		let content = '';
+		const toolCalls = new Map<
+			number,
+			{ id: string; type: 'function'; function: { name: string; arguments: string } }
+		>();
+		let finishReason: string | null = null;
+		let usage: OpenAI.CompletionUsage | undefined;
+
+		for await (const chunk of stream) {
+			const choice = chunk.choices[0];
+			if (choice) {
+				if (choice.delta?.content) content += choice.delta.content;
+				for (const tc of choice.delta?.tool_calls ?? []) {
+					const idx = tc.index;
+					let acc = toolCalls.get(idx);
+					if (!acc) {
+						acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
+						toolCalls.set(idx, acc);
+					}
+					if (tc.id) acc.id = tc.id;
+					if (tc.function?.name) acc.function.name += tc.function.name;
+					if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+				}
+				if (choice.finish_reason) finishReason = choice.finish_reason;
+			}
+			if (chunk.usage) usage = chunk.usage;
+		}
+
+		const tcList = [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+		const message = {
+			role: 'assistant',
+			content: content || null,
+			...(tcList.length ? { tool_calls: tcList } : {}),
+		} as OpenAI.Chat.Completions.ChatCompletionMessage;
+
+		return { message, finishReason, usage };
 	}
 
 	// ── Whisper (audio → text) ──

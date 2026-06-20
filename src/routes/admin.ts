@@ -25,6 +25,7 @@ export interface AdminDeps {
 	supabase: AppSupabaseClient;
 	trinks: TrinksClient;
 	uazapi: UazapiClient;
+	openai?: import('../clients/openai.js').AppOpenAIClient;
 }
 
 function calcRange(periodo: string, dataParam: string | undefined): { inicio: string; fim: string } {
@@ -396,6 +397,69 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 			falhas,
 			results,
 		});
+	});
+
+	/**
+	 * Valida o chat() real (streaming) com tool calling — confirma que a
+	 * remontagem dos tool_calls fragmentados funciona em produção. Roda N vezes.
+	 *   GET /admin/diag/stream?n=10
+	 */
+	router.get('/admin/diag/stream', async (c) => {
+		if (!deps.openai) return c.json({ status: 'erro', razao: 'openai não injetado' }, 500);
+		const n = Math.min(Number(c.req.query('n') ?? 10), 30);
+		const tool = {
+			type: 'function' as const,
+			function: {
+				name: 'agendar',
+				description: 'Agenda um horário',
+				parameters: {
+					type: 'object',
+					properties: {
+						nome: { type: 'string' },
+						data_hora: { type: 'string', description: 'ISO datetime' },
+					},
+					required: ['nome', 'data_hora'],
+				},
+			},
+		};
+		const results: Array<Record<string, unknown>> = [];
+		for (let i = 0; i < n; i++) {
+			const t0 = Date.now();
+			try {
+				const r = await deps.openai.chat({
+					messages: [
+						{
+							role: 'user',
+							content: 'Agende para Maria Silva no dia 2026-07-15 às 14:00. Use a ferramenta.',
+						},
+					],
+					tools: [tool],
+				});
+				const tcs = r.message.tool_calls ?? [];
+				results.push({
+					i,
+					ms: Date.now() - t0,
+					finishReason: r.finishReason,
+					toolCalls: tcs.map((t) => ({
+						name: t.function.name,
+						args: t.function.arguments,
+						// argsValido confirma que o JSON remontado parseia
+						argsValido: (() => {
+							try {
+								JSON.parse(t.function.arguments);
+								return true;
+							} catch {
+								return false;
+							}
+						})(),
+					})),
+				});
+			} catch (err) {
+				results.push({ i, ms: Date.now() - t0, error: err instanceof Error ? err.message : String(err) });
+			}
+		}
+		const falhas = results.filter((r) => r.error || (r.toolCalls as unknown[])?.length === 0).length;
+		return c.json({ tentativas: n, falhas, results });
 	});
 
 	/**

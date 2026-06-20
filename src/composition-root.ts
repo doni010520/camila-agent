@@ -93,7 +93,7 @@ export async function bootApp(): Promise<BootResult> {
 	app.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML)); // dev, dark theme
 	app.get('/admin/cliente', (c) => c.html(CLIENTE_HTML));      // Camila, rose gold
 
-	app.route('/', createAdminRouter({ postgres, supabase, trinks, uazapi }));
+	app.route('/', createAdminRouter({ postgres, supabase, trinks, uazapi, openai }));
 
 	const webhookRouter = createWebhookMessageRouter({
 		openai,
