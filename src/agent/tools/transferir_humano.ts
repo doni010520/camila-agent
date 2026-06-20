@@ -45,7 +45,7 @@ export function createTransferirHumano(deps: {
 					status: 'ok',
 					ia_ativa: true,
 					em_recesso: true,
-					mensagem: `A Camila está de recesso e retorna no dia ${retorno}. Informe à cliente, com carinho, que assim que a Camila voltar (${retorno}) ela vai falar pessoalmente com ela. NÃO diga que vai chamar a Camila agora. Continue ajudando no que puder.`,
+					mensagem: `A Camila está de recesso e retorna no dia ${retorno}. Informe à cliente, com carinho, que assim que a Camila voltar (${retorno}) ela fala pessoalmente. NÃO diga que vai chamar a Camila agora nem prometa encaixe. Você continua atendendo normalmente no que puder resolver.`,
 				};
 			}
 

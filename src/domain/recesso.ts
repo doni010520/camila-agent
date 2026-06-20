@@ -1,11 +1,15 @@
 /**
  * Modo recesso da Camila.
  *
- * Durante o período configurado (HELENA_RECESSO_INICIO/FIM), quando a cliente
- * pede pra falar com a Camila, a Helena informa que ela está de recesso e que
- * retornará pra falar pessoalmente — em vez de transferir e desativar a IA.
- * O pedido ainda é registrado (notificar_time) pra Camila ter a lista de quem
- * a procurou e retornar quando voltar.
+ * Durante o período configurado (HELENA_RECESSO_INICIO/FIM), a Helena CONTINUA
+ * ATENDENDO normalmente (conversa, dúvidas, catálogo, preços). O que ela NÃO
+ * pode é:
+ *  - agendar para datas DENTRO do recesso (a Camila não atende esses dias);
+ *  - oferecer encaixe / chamar a Camila para essas datas.
+ *
+ * O bloqueio é pela DATA DO AGENDAMENTO (dataEstaNoRecesso), não pela data da
+ * conversa. Separadamente, se a cliente quiser falar com a Camila DURANTE o
+ * recesso, a Helena informa o recesso (estaEmRecesso(hoje)).
  */
 import { getEnv } from '../infra/env.js';
 import { addDaysBRT, todayBRT } from './data-brt.js';
@@ -16,7 +20,18 @@ export function getRecesso(): { inicio: string; fim: string } | null {
 	return { inicio: env.HELENA_RECESSO_INICIO, fim: env.HELENA_RECESSO_FIM };
 }
 
-/** True se hoje (BRT) está dentro do período de recesso (inclusivo). */
+/** True se a data (YYYY-MM-DD ou ISO) cai DENTRO do recesso — usado pra
+ *  bloquear agendamentos/encaixes nesses dias. */
+export function dataEstaNoRecesso(dataISO: string): boolean {
+	const r = getRecesso();
+	if (!r) return false;
+	const dia = (dataISO ?? '').slice(0, 10); // YYYY-MM-DD
+	if (dia.length !== 10) return false;
+	return dia >= r.inicio && dia <= r.fim;
+}
+
+/** True se HOJE (BRT) está dentro do recesso — usado pra mensagem ao pedir
+ *  falar com a Camila durante o período. */
 export function estaEmRecesso(hoje: string = todayBRT()): boolean {
 	const r = getRecesso();
 	if (!r) return false;
@@ -38,34 +53,28 @@ export function dataRetornoRecesso(): string | null {
 
 /**
  * Bloco de instrução pro prompt. Vazio quando não há recesso configurado ou
- * quando ele já passou. Aparece quando estamos DENTRO do recesso (ou nos dias
- * próximos, pra avisar com antecedência).
+ * quando ele já passou. A Helena atende normal — só não agenda nas datas do
+ * recesso.
  */
 export function recessoInfoParaPrompt(hoje: string = todayBRT()): string {
 	const r = getRecesso();
 	if (!r) return '';
 	if (hoje > r.fim) return ''; // recesso já passou
 	const retorno = dataRetornoRecesso();
-	const dentro = estaEmRecesso(hoje);
-	const estado = dentro
-		? `A Camila está DE RECESSO agora (de ${ddmm(r.inicio)} a ${ddmm(r.fim)}).`
-		: `A Camila entrará de recesso de ${ddmm(r.inicio)} a ${ddmm(r.fim)}.`;
 	return [
-		'## ⚠️ Recesso da Camila',
+		`## ⚠️ Recesso da Camila (${ddmm(r.inicio)} a ${ddmm(r.fim)})`,
 		'',
-		estado,
-		`Ela retorna no dia ${retorno}.`,
+		`A Camila estará de recesso de ${ddmm(r.inicio)} a ${ddmm(r.fim)} e retorna no dia ${retorno}.`,
 		'',
-		'Se a cliente pedir pra falar com a Camila, ou tiver um assunto que só ela',
-		'resolve (reclamação, negociação de valor, dúvida pessoal), informe com',
-		`carinho que a Camila está de recesso e que, assim que voltar (${retorno}),`,
-		'ela mesma vai falar com a pessoa. Pode dizer algo como: "A Camila está de',
-		`recesso até ${retorno} 💖 Assim que ela voltar, vai te responder pessoalmente!`,
-		'Posso te ajudar em mais alguma coisa por aqui?"',
+		'VOCÊ CONTINUA ATENDENDO NORMALMENTE nesse período — conversa, tira dúvidas,',
+		'manda catálogo, informa preços e agenda para datas FORA do recesso.',
 		'',
-		'**NÃO use `transferir_humano` durante o recesso** (não desative a IA).',
-		'Em vez disso, registre o pedido chamando `notificar_time` pra Camila ter a',
-		'lista de quem a procurou. Continue ajudando normalmente com agendamentos e',
-		'dúvidas que você resolve.',
+		'O que você NÃO pode:',
+		`- **NÃO agende para nenhum dia entre ${ddmm(r.inicio)} e ${ddmm(r.fim)}.** A Camila não atende`,
+		`  esses dias. Se a cliente pedir uma dessas datas, explique com carinho que a`,
+		`  Camila estará de recesso e ofereça agendar a partir de ${retorno}.`,
+		'- **NÃO ofereça encaixe nem diga que vai chamar a Camila** para essas datas.',
+		`- Se a cliente quiser falar com a Camila pessoalmente, informe que ela está de`,
+		`  recesso e retorna ${retorno}.`,
 	].join('\n');
 }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+	dataEstaNoRecesso,
 	dataRetornoRecesso,
 	estaEmRecesso,
 	recessoInfoParaPrompt,
@@ -33,19 +34,29 @@ describe('recesso', () => {
 		expect(dataRetornoRecesso()).toBe('02/07');
 	});
 
-	it('prompt mostra info durante o recesso e some depois', () => {
+	it('dataEstaNoRecesso bloqueia agendamento PELA data do agendamento (não pela de hoje)', () => {
 		setTestEnv({ HELENA_RECESSO_INICIO: '2026-06-27', HELENA_RECESSO_FIM: '2026-07-01' });
-		const dentro = recessoInfoParaPrompt('2026-06-28');
-		expect(dentro).toContain('DE RECESSO');
-		expect(dentro).toContain('02/07');
-		expect(dentro).toContain('transferir_humano');
-		// depois do recesso → vazio
-		expect(recessoInfoParaPrompt('2026-07-05')).toBe('');
+		// aceita YYYY-MM-DD e ISO completo
+		expect(dataEstaNoRecesso('2026-06-28')).toBe(true);
+		expect(dataEstaNoRecesso('2026-06-27T09:00:00')).toBe(true);
+		expect(dataEstaNoRecesso('2026-07-01T17:30:00')).toBe(true);
+		// fora do recesso
+		expect(dataEstaNoRecesso('2026-06-26T09:00:00')).toBe(false);
+		expect(dataEstaNoRecesso('2026-07-02T09:00:00')).toBe(false);
 	});
 
-	it('prompt avisa com antecedência (antes do início)', () => {
+	it('sem recesso configurado → nenhuma data bloqueada', () => {
+		setTestEnv({});
+		expect(dataEstaNoRecesso('2026-06-28')).toBe(false);
+	});
+
+	it('prompt: atende normal mas não agenda nas datas; some depois do recesso', () => {
 		setTestEnv({ HELENA_RECESSO_INICIO: '2026-06-27', HELENA_RECESSO_FIM: '2026-07-01' });
-		const antes = recessoInfoParaPrompt('2026-06-25');
-		expect(antes).toContain('entrará de recesso');
+		const info = recessoInfoParaPrompt('2026-06-20'); // antes do recesso, mas relevante
+		expect(info).toContain('ATENDENDO NORMALMENTE');
+		expect(info).toContain('NÃO agende');
+		expect(info).toContain('02/07');
+		// depois do recesso → vazio
+		expect(recessoInfoParaPrompt('2026-07-05')).toBe('');
 	});
 });

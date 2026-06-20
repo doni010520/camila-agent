@@ -4,6 +4,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { todayBRT } from '../../domain/data-brt.js';
 import { filterByTurno, isLunchBreak } from '../../domain/horario-funcionamento.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
+import { dataEstaNoRecesso } from '../../domain/recesso.js';
 import { getAgendaDoDiaCached } from '../../infra/disponibilidade-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
@@ -110,6 +111,9 @@ export function createConsultarDisponibilidade(deps: {
 
 					const dateStr = d.toISOString().split('T')[0];
 					if (!dateStr) continue;
+
+					// Recesso da Camila: nunca oferecer horários nesses dias.
+					if (dataEstaNoRecesso(dateStr)) continue;
 
 					// try/catch POR DIA: um 429/timeout num dia não derruba a consulta
 					// inteira — pula esse dia e segue. Antes, qualquer erro num dos

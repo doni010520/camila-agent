@@ -293,4 +293,31 @@ describe('criar_agendamento', () => {
 		expect(trinks.listProfissionaisComAgenda).not.toHaveBeenCalled();
 		setTestEnv({}); // reset pra não vazar pros outros testes
 	});
+
+	it('🏖️ recesso: recusa agendamento para data dentro do recesso (oferece depois)', async () => {
+		setTestEnv({ HELENA_RECESSO_INICIO: '2026-06-27', HELENA_RECESSO_FIM: '2026-07-01' });
+		const { tool, trinks } = makeDeps();
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-06-28T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		if (result.status === 'erro') {
+			expect(result.razao).toContain('recesso');
+			expect(result.razao).toContain('02/07');
+		}
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+		setTestEnv({});
+	});
+
+	it('🏖️ recesso: agenda normal para data FORA do recesso', async () => {
+		setTestEnv({ HELENA_RECESSO_INICIO: '2026-06-27', HELENA_RECESSO_FIM: '2026-07-01' });
+		const { tool } = makeDeps();
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('ok');
+		setTestEnv({});
+	});
 });

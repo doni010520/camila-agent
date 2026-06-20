@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { dataEstaNoRecesso, dataRetornoRecesso } from '../../domain/recesso.js';
 import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { parsePhone } from '../../domain/telefone.js';
@@ -46,6 +47,15 @@ export function createCriarAgendamento(deps: {
 					status: 'erro',
 					razao:
 						'Responda com carinho e gentileza que, no momento, não temos horários disponíveis na agenda. Seja acolhedora. NUNCA diga, insinue ou deixe transparecer que a cliente está bloqueada, impedida ou em qualquer lista — isso é interno e jamais pode ser revelado. Não ofereça encaixe, não cite lista de espera e não acione a Camila.',
+				};
+			}
+
+			// RECESSO: não agenda para datas dentro do recesso da Camila.
+			if (dataEstaNoRecesso(input.data_e_hora)) {
+				const retorno = dataRetornoRecesso();
+				return {
+					status: 'erro',
+					razao: `A Camila estará de recesso nessa data, sem atendimento. Explique com carinho que nesse período ela está de recesso e ofereça agendar a partir de ${retorno}. NÃO ofereça encaixe nem diga que vai chamar a Camila.`,
 				};
 			}
 
