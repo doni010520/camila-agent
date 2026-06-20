@@ -15,6 +15,7 @@ import { findClienteByTelefone } from '../domain/cliente-lookup.js';
 import { todayBRT } from '../domain/data-brt.js';
 import { ACTIVE_STATUSES } from '../domain/trinks-status.js';
 import { agregarEventos } from '../jobs/relatorio-diario.js';
+import { getEnv } from '../infra/env.js';
 
 // Re-exporta os HTMLs para uso no composition-root
 export { DASHBOARD_HTML, CLIENTE_HTML } from './dashboard-html.js';
@@ -310,6 +311,71 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 		} catch (err) {
 			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
 		}
+	});
+
+	/**
+	 * Diagnóstico de rede com a OpenAI. Faz N chamadas reais a /v1/models e
+	 * reporta status + headers de resposta (content-length, transfer-encoding,
+	 * via, server...) pra identificar proxy/header malformado que causa o
+	 * "invalid content-length header" / "Premature close".
+	 *   GET /admin/diag/openai?n=10
+	 */
+	router.get('/admin/diag/openai', async (c) => {
+		const n = Math.min(Number(c.req.query('n') ?? 10), 50);
+		const env = getEnv();
+		const proxy = {
+			HTTP_PROXY: process.env.HTTP_PROXY ?? process.env.http_proxy ?? null,
+			HTTPS_PROXY: process.env.HTTPS_PROXY ?? process.env.https_proxy ?? null,
+			NO_PROXY: process.env.NO_PROXY ?? process.env.no_proxy ?? null,
+			OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? null,
+		};
+		const results: Array<Record<string, unknown>> = [];
+		for (let i = 0; i < n; i++) {
+			const t0 = Date.now();
+			try {
+				const res = await fetch('https://api.openai.com/v1/models', {
+					headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+				});
+				const h: Record<string, string> = {};
+				res.headers.forEach((v, k) => {
+					h[k] = v;
+				});
+				// força ler o corpo todo pra reproduzir o erro de content-length
+				const body = await res.text();
+				results.push({
+					i,
+					ok: res.ok,
+					status: res.status,
+					ms: Date.now() - t0,
+					bodyLen: body.length,
+					contentLength: h['content-length'] ?? null,
+					transferEncoding: h['transfer-encoding'] ?? null,
+					contentEncoding: h['content-encoding'] ?? null,
+					via: h.via ?? null,
+					server: h.server ?? null,
+					cfRay: h['cf-ray'] ?? null,
+				});
+			} catch (err) {
+				results.push({
+					i,
+					ok: false,
+					ms: Date.now() - t0,
+					error: err instanceof Error ? err.message : String(err),
+					cause:
+						err instanceof Error && 'cause' in err
+							? String((err as { cause?: unknown }).cause)
+							: null,
+				});
+			}
+		}
+		const falhas = results.filter((r) => !r.ok).length;
+		return c.json({
+			node: process.version,
+			proxy,
+			tentativas: n,
+			falhas,
+			results,
+		});
 	});
 
 	/**
