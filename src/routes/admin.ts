@@ -463,6 +463,30 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Diagnóstico do modo recesso. Confirma que o servidor leu as env vars e
+	 * mostra o comportamento pra hoje e pra uma data simulada.
+	 *   GET /admin/diag/recesso?data=2026-06-28
+	 */
+	router.get('/admin/diag/recesso', async (c) => {
+		const { getRecesso, estaEmRecesso, dataRetornoRecesso, recessoInfoParaPrompt } = await import(
+			'../domain/recesso.js'
+		);
+		const { todayBRT } = await import('../domain/data-brt.js');
+		const hoje = todayBRT();
+		const dataSim = c.req.query('data') ?? '2026-06-28';
+		return c.json({
+			configurado: getRecesso(),
+			retorno: dataRetornoRecesso(),
+			hoje: { data: hoje, em_recesso: estaEmRecesso(hoje) },
+			simulado: {
+				data: dataSim,
+				em_recesso: estaEmRecesso(dataSim),
+				prompt: recessoInfoParaPrompt(dataSim),
+			},
+		});
+	});
+
+	/**
 	 * Diagnóstico: checa se um telefone está na lista de bloqueados (sempre
 	 * "sem vagas"). Não expõe a lista inteira — só responde sim/não.
 	 *   GET /admin/bloqueio/check?tel=5571993536700
