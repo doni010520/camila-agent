@@ -463,6 +463,27 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Diagnóstico da instância UAZAPI (WhatsApp). Mostra se está conectada —
+	 * "disconnected" explica por que a Helena para de receber/enviar.
+	 *   GET /admin/diag/uazapi
+	 */
+	router.get('/admin/diag/uazapi', async (c) => {
+		const env = getEnv();
+		const base = env.UAZAPI_BASE_URL.replace(/\/$/, '');
+		const out: Record<string, unknown> = { base };
+		try {
+			const res = await fetch(`${base}/instance/status`, {
+				headers: { token: env.UAZAPI_TOKEN },
+			});
+			out.http = res.status;
+			out.body = await res.json().catch(() => null);
+		} catch (err) {
+			out.error = err instanceof Error ? err.message : String(err);
+		}
+		return c.json(out);
+	});
+
+	/**
 	 * Diagnóstico do modo recesso. Confirma que o servidor leu as env vars e
 	 * mostra o comportamento pra hoje e pra uma data simulada.
 	 *   GET /admin/diag/recesso?data=2026-06-28
