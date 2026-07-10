@@ -463,6 +463,27 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Busca lead(s) por nome ou telefone — mostra etiquetas, sinal_pago, IA.
+	 * Pra diagnosticar "por que a cliente X foi cobrada sinal" (etiqueta VIP).
+	 *   GET /admin/lead?nome=Lalesca   |   GET /admin/lead?tel=71999
+	 */
+	router.get('/admin/lead', async (c) => {
+		const nome = c.req.query('nome');
+		const tel = c.req.query('tel');
+		if (!nome && !tel) return c.json({ status: 'erro', razao: 'nome ou tel obrigatório' }, 400);
+		const sql = tel
+			? "SELECT telefone, nome, etiquetas, sinal_pago, ia_on_off, ultimo_contato::text FROM leads_energia_solar WHERE telefone LIKE $1 ORDER BY ultimo_contato DESC NULLS LAST LIMIT 15"
+			: "SELECT telefone, nome, etiquetas, sinal_pago, ia_on_off, ultimo_contato::text FROM leads_energia_solar WHERE nome ILIKE $1 ORDER BY ultimo_contato DESC NULLS LAST LIMIT 15";
+		const param = tel ? `%${tel}%` : `%${nome}%`;
+		try {
+			const rows = await deps.postgres.query(sql, [param]);
+			return c.json({ total: rows.length, leads: rows });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Diagnóstico da instância UAZAPI (WhatsApp). Mostra se está conectada —
 	 * "disconnected" explica por que a Helena para de receber/enviar.
 	 *   GET /admin/diag/uazapi
