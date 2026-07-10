@@ -5,7 +5,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { dataEstaNoRecesso, dataRetornoRecesso } from '../../domain/recesso.js';
-import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
+import { todayBRT, trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { parsePhone } from '../../domain/telefone.js';
 import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
@@ -21,6 +21,12 @@ const inputSchema = z.object({
 	nome: z.string().describe('Nome da cliente'),
 	servico: z.string().describe('Nome do serviço'),
 	data_e_hora: z.string().describe("Data e hora ISO: '2026-05-29T17:00:00'"),
+	agendamento_adicional: z
+		.boolean()
+		.optional()
+		.describe(
+			'Só passe true se a cliente confirmou EXPLICITAMENTE que quer um agendamento ADICIONAL, mantendo o(s) que já tem. Para remarcar/mudar data use reagendar_agendamento, NÃO isto.',
+		),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -117,17 +123,19 @@ export function createCriarAgendamento(deps: {
 			// Duas clientes pedindo o mesmo horário ao mesmo tempo agora rodam em série —
 			// a segunda só valida DEPOIS da primeira ter criado, então enxerga o ocupado.
 			return await withAgendamentoLock(lockKey(profissionalId, input.data_e_hora), async () => {
-			// 3a. IDEMPOTENCY + ANTI-DUPLICAÇÃO POR DIA
+			// 3a. IDEMPOTENCY + ANTI-DUPLICAÇÃO (QUALQUER DIA FUTURO)
 			// (a) Mesmo horário e mesmo cliente -> retorna existente (idempotency)
-			// (b) MESMO DIA mas horário/serviço diferente -> recusa e força reagendar.
-			//     Sem isso, cliente que muda de ideia ("ah, prefiro 14h") gerava
-			//     duplicidade na agenda da profissional (caso Kezia 04/06: 3 ativos).
-			const dataDia = input.data_e_hora.substring(0, 10); // 'YYYY-MM-DD'
+			// (b) Já tem agendamento ativo em QUALQUER data futura -> recusa e força
+			//     reagendar. Antes só olhava o MESMO DIA, então remarcar pra outro
+			//     dia via criar_agendamento gerava DOIS ativos (bug relatado: "ela
+			//     remarca mas não tira o anterior"). Exceção: agendamento_adicional
+			//     = true (cliente confirmou explicitamente que quer um a mais).
 			try {
+				const hojeStr = todayBRT();
 				const existing = await trinks.listAgendamentos({
 					clienteId,
-					dataInicio: `${dataDia}T00:00:00`,
-					dataFim: `${dataDia}T23:59:59`,
+					dataInicio: `${hojeStr}T00:00:00`,
+					dataFim: '2027-12-31T23:59:59',
 				});
 				const ativos = (existing.data ?? []).filter((a) => ACTIVE_STATUSES.has(a.status.id));
 				const dup = ativos.find(
@@ -148,13 +156,13 @@ export function createCriarAgendamento(deps: {
 						ja_existia: true,
 					};
 				}
-				if (ativos.length > 0) {
-					// (b) Regra de negócio: cliente NUNCA faz 2 procedimentos de cílio
-					//     no mesmo dia. Se já existe ativo, é remarcação obrigatória.
+				if (ativos.length > 0 && !input.agendamento_adicional) {
+					// (b) Já existe ativo futuro. Quase sempre a cliente quer MUDAR a
+					//     data (remarcar), não criar um segundo. Bloqueia e orienta.
 					return {
 						status: 'erro',
 						razao:
-							'Cliente já tem agendamento ativo neste dia — não é permitido marcar 2 procedimentos de cílio no mesmo dia. Chame reagendar_agendamento passando o agendamento_id existente abaixo + nova_data_hora.',
+							'A cliente JÁ TEM agendamento(s) ativo(s) (veja abaixo). Se ela quer MUDAR a data/horário, chame reagendar_agendamento com o agendamento_id existente + nova_data_hora — NÃO crie outro. Só crie um novo (agendamento_adicional=true) se a cliente confirmou EXPLICITAMENTE que quer um agendamento a mais, mantendo o que já tem.',
 						detalhes: {
 							existentes: ativos.map((a) => ({
 								id: a.id,

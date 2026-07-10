@@ -17,6 +17,7 @@ function makeDeps(overrides?: {
 	getAgendamentoFn?: ReturnType<typeof vi.fn>;
 	createAgendamentoFn?: ReturnType<typeof vi.fn>;
 	listClientesFn?: ReturnType<typeof vi.fn>;
+	listAgendamentosFn?: ReturnType<typeof vi.fn>;
 }) {
 	const trinks = {
 		listClientes:
@@ -57,7 +58,7 @@ function makeDeps(overrides?: {
 			}),
 		getCliente: vi.fn().mockResolvedValue({ id: 79761206, nome: 'Maria' }),
 		// idempotência/conflito: sem agendamentos por padrão
-		listAgendamentos: vi.fn().mockResolvedValue({ data: [] }),
+		listAgendamentos: overrides?.listAgendamentosFn ?? vi.fn().mockResolvedValue({ data: [] }),
 		// disponibilidade (fail-closed): Camila com slots livres cobrindo 14:00–16:00
 		listProfissionaisComAgenda: vi.fn().mockResolvedValue({
 			data: [
@@ -319,5 +320,57 @@ describe('criar_agendamento', () => {
 		);
 		expect(result.status).toBe('ok');
 		setTestEnv({});
+	});
+
+	// ── Anti-duplicação em OUTRO dia (bug: remarca sem tirar o anterior) ──
+
+	it('🔁 já tem agendamento ativo em OUTRO dia → recusa e manda reagendar (não duplica)', async () => {
+		const { tool, trinks } = makeDeps({
+			// cliente já tem um ativo no dia 25 (outro dia diferente do pedido 20)
+			listAgendamentosFn: vi.fn().mockResolvedValue({
+				data: [
+					{
+						id: 999111,
+						status: { id: 1, nome: 'Agendado' },
+						cliente: { id: 79761206, nome: 'Maria' },
+						servico: { id: 7331915, nome: 'Volume Brasileiro' },
+						dataHoraInicio: '2026-05-25T10:00:00',
+						duracaoEmMinutos: 120,
+					},
+				],
+			}),
+		});
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00' },
+			ctx,
+		);
+		expect(result.status).toBe('erro');
+		if (result.status === 'erro') {
+			expect(result.razao).toContain('reagendar_agendamento');
+		}
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('➕ agendamento_adicional=true → cria mesmo já tendo outro ativo', async () => {
+		const { tool, trinks } = makeDeps({
+			listAgendamentosFn: vi.fn().mockResolvedValue({
+				data: [
+					{
+						id: 999111,
+						status: { id: 1, nome: 'Agendado' },
+						cliente: { id: 79761206, nome: 'Maria' },
+						servico: { id: 7331915, nome: 'Volume Brasileiro' },
+						dataHoraInicio: '2026-05-25T10:00:00',
+						duracaoEmMinutos: 120,
+					},
+				],
+			}),
+		});
+		const result = await tool.handler(
+			{ telefone: '5571999999999', nome: 'Maria', servico: 'Volume Brasileiro', data_e_hora: '2026-05-20T14:00:00', agendamento_adicional: true },
+			ctx,
+		);
+		expect(result.status).toBe('ok');
+		expect(trinks.createAgendamento).toHaveBeenCalled();
 	});
 });
