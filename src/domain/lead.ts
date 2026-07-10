@@ -5,6 +5,16 @@ import { rootLogger } from '../infra/logger.js';
 /** Hours before a conversation is considered "new" (resets pdf_catalogo_enviado_em) */
 const NEW_CONVERSATION_HOURS = 6;
 
+/** Função pura: uma cliente é VIP se tem a etiqueta VIP conhecida da produção
+ *  ("557196416018:9") ou qualquer etiqueta contendo "vip". Usada tanto pelo
+ *  LeadManager quanto pra computar o flag {{cliente_vip}} do prompt — a decisão
+ *  de VIP fica no CÓDIGO, não no LLM (que falhava ao interpretar o ID cru). */
+export function isLeadVip(lead: { etiquetas?: string[] | null }): boolean {
+	return (lead.etiquetas ?? []).some(
+		(e) => e.includes('557196416018:9') || e.toLowerCase().includes('vip'),
+	);
+}
+
 export type LeadUpsertInput = {
 	telefone: string;
 	nome?: string;
@@ -206,8 +216,6 @@ export class LeadManager {
 
 	/** Check if lead is VIP (has the known VIP label from production) */
 	isVip(lead: LeadCamilaRow): boolean {
-		return lead.etiquetas.some(
-			(e) => e.includes('557196416018:9') || e.toLowerCase().includes('vip'),
-		);
+		return isLeadVip(lead);
 	}
 }

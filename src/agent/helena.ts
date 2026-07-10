@@ -8,6 +8,7 @@ import type { UazapiClient } from '../clients/uazapi.js';
 import { nowBRT } from '../domain/data-brt.js';
 import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
+import { isLeadVip } from '../domain/lead.js';
 import { recessoInfoParaPrompt } from '../domain/recesso.js';
 import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
@@ -62,6 +63,7 @@ function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string 
 	return PROMPT_TEMPLATE.replace('{{data_atual}}', nowBRT())
 		.replace('{{cliente_nome}}', lead.nome ?? 'amiga')
 		.replace('{{lead_etiquetas}}', lead.etiquetas.join(', ') || 'nenhuma')
+		.replace('{{cliente_vip}}', isLeadVip(lead) ? 'SIM' : 'não')
 		.replace('{{sinal_pago}}', lead.sinal_pago ? 'sim' : 'não')
 		.replace('{{pdf_catalogo_enviado_h}}', pdfH)
 		.replace('{{horario_expediente}}', formatScheduleForPrompt())

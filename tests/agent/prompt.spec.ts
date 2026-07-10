@@ -53,6 +53,7 @@ describe('Helena prompt v14', () => {
 			'{{data_atual}}',
 			'{{cliente_nome}}',
 			'{{lead_etiquetas}}',
+			'{{cliente_vip}}',
 			'{{sinal_pago}}',
 			'{{pdf_catalogo_enviado_h}}',
 			'{{horario_expediente}}',
