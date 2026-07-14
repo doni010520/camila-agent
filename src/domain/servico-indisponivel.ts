@@ -1,10 +1,15 @@
 /**
- * Serviços temporariamente indisponíveis (ex: studio sem profissional).
+ * Allowlist de serviços que a Helena pode oferecer/agendar.
  *
- * A Helena não oferece (some da tabela de preços do prompt) nem agenda esses
- * serviços. Configurado por HELENA_SERVICOS_INDISPONIVEIS (CSV de palavras-
- * chave). Casa por substring, sem acento/caixa. Pra reativar, setar a env
- * vazia no Easypanel.
+ * O estabelecimento da Camila tem, na Trinks, serviços de OUTROS profissionais
+ * (sobrancelha, micropigmentação, unhas, massagem, depilação, limpeza de pele)
+ * que a Helena NÃO deve oferecer — a Camila é lash designer, só faz cílios.
+ *
+ * Configurado por HELENA_SERVICOS_PERMITIDOS (CSV de palavras-chave). Um serviço
+ * é "indisponível" (não oferecido/agendado) se NÃO casa nenhuma palavra da
+ * allowlist. Casa por substring, sem acento/caixa. Allowlist vazia = tudo
+ * liberado (comportamento antigo). Pra reativar um serviço, adicione uma
+ * palavra que case o nome dele.
  */
 import { getEnv } from '../infra/env.js';
 
@@ -16,18 +21,21 @@ function norm(s: string): string {
 		.trim();
 }
 
-/** Palavras-chave normalizadas dos serviços indisponíveis (do env). */
-function keywords(): string[] {
-	const raw = getEnv().HELENA_SERVICOS_INDISPONIVEIS ?? '';
+/** Palavras-chave normalizadas dos serviços permitidos (do env). */
+function permitidos(): string[] {
+	const raw = getEnv().HELENA_SERVICOS_PERMITIDOS ?? '';
 	return raw
 		.split(',')
 		.map((k) => norm(k))
 		.filter((k) => k.length > 0);
 }
 
-/** True se o nome do serviço casa com alguma palavra-chave indisponível. */
+/** True se o serviço NÃO é oferecido pela Helena (não é da Camila). Quando a
+ *  allowlist está vazia, nada é indisponível. */
 export function servicoIndisponivel(nomeServico: string): boolean {
+	const perms = permitidos();
+	if (perms.length === 0) return false; // sem allowlist → tudo liberado
 	const n = norm(nomeServico);
 	if (!n) return false;
-	return keywords().some((k) => n.includes(k));
+	return !perms.some((k) => n.includes(k)); // indisponível se não casa nenhuma
 }

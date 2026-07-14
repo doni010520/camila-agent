@@ -64,12 +64,15 @@ const envSchema = z.object({
 	HELENA_RECESSO_INICIO: z.string().optional(),
 	HELENA_RECESSO_FIM: z.string().optional(),
 
-	/** Palavras-chave (CSV) de serviços que a Helena NÃO deve oferecer nem
-	 *  agendar — ex: sem profissional no momento. Case/acento-insensível; casa
-	 *  por substring no nome do serviço. Default "sobrancelha" (studio sem
-	 *  profissional de sobrancelha). Pra reativar, setar vazio no Easypanel.
-	 *  Ex: "sobrancelha,micropigment,pure browns". */
-	HELENA_SERVICOS_INDISPONIVEIS: z.string().default('sobrancelha'),
+	/** ALLOWLIST de serviços que a Helena PODE oferecer/agendar (palavras-chave
+	 *  CSV). A Trinks tem serviços de outros profissionais (sobrancelha, unhas,
+	 *  massagem...) que a Helena NÃO deve oferecer — só os da Camila (cílios).
+	 *  Case/acento-insensível, casa por substring. Se um serviço não casa
+	 *  nenhuma palavra, é tratado como indisponível. Vazio = tudo liberado.
+	 *  Default cobre todos os serviços de cílios da Camila. */
+	HELENA_SERVICOS_PERMITIDOS: z
+		.string()
+		.default('volume,cilio,lash,efeito,fox,hidragloss,hibrido,remocao,reposicao'),
 });
 
 export type Env = z.infer<typeof envSchema>;
