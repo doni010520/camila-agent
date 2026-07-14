@@ -484,6 +484,28 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Serviços CRUS da Trinks com categoria — pra decidir como filtrar "só
+	 * serviços da Camila".
+	 *   GET /admin/diag/servicos
+	 */
+	router.get('/admin/diag/servicos', async (c) => {
+		try {
+			const r = await deps.trinks.listServicos({ pageSize: 100 });
+			const rows = (r.data ?? []).map((s) => ({
+				id: s.id,
+				nome: s.nome,
+				categoriaId: s.categoriaId ?? null,
+				categoriaNome: s.categoriaNome ?? null,
+				ativo: s.ativo ?? null,
+				preco: s.preco ?? null,
+			}));
+			return c.json({ total: rows.length, servicos: rows });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Diagnóstico da instância UAZAPI (WhatsApp). Mostra se está conectada —
 	 * "disconnected" explica por que a Helena para de receber/enviar.
 	 *   GET /admin/diag/uazapi
