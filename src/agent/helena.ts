@@ -10,6 +10,7 @@ import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
 import { isLeadVip } from '../domain/lead.js';
 import { recessoInfoParaPrompt } from '../domain/recesso.js';
+import { servicoIndisponivel } from '../domain/servico-indisponivel.js';
 import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
@@ -40,6 +41,7 @@ export interface AgentDeps {
 function formatCatalogoPrecos(servicos: Array<{ nome: string; preco?: number | null }>): string {
 	const validos = servicos
 		.filter((s) => (s.preco ?? 0) > 1)
+		.filter((s) => !servicoIndisponivel(s.nome)) // esconde serviços sem profissional
 		.sort((a, b) => a.nome.localeCompare(b.nome));
 	if (validos.length === 0) return '';
 	const linhas = validos.map((s) => `- ${s.nome}: R$${s.preco}`);

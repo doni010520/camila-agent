@@ -63,6 +63,13 @@ const envSchema = z.object({
 	 *  se os dois estiverem setados. Ex: INICIO=2026-06-27 FIM=2026-07-01. */
 	HELENA_RECESSO_INICIO: z.string().optional(),
 	HELENA_RECESSO_FIM: z.string().optional(),
+
+	/** Palavras-chave (CSV) de serviços que a Helena NÃO deve oferecer nem
+	 *  agendar — ex: sem profissional no momento. Case/acento-insensível; casa
+	 *  por substring no nome do serviço. Default "sobrancelha" (studio sem
+	 *  profissional de sobrancelha). Pra reativar, setar vazio no Easypanel.
+	 *  Ex: "sobrancelha,micropigment,pure browns". */
+	HELENA_SERVICOS_INDISPONIVEIS: z.string().default('sobrancelha'),
 });
 
 export type Env = z.infer<typeof envSchema>;

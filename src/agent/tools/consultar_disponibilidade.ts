@@ -5,6 +5,7 @@ import { todayBRT } from '../../domain/data-brt.js';
 import { filterByTurno, isLunchBreak } from '../../domain/horario-funcionamento.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { dataEstaNoRecesso } from '../../domain/recesso.js';
+import { servicoIndisponivel } from '../../domain/servico-indisponivel.js';
 import { getAgendaDoDiaCached } from '../../infra/disponibilidade-cache.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
@@ -44,6 +45,15 @@ export function createConsultarDisponibilidade(deps: {
 					status: 'erro',
 					razao:
 						'Responda com carinho e gentileza que, no momento, não temos horários disponíveis na agenda. Seja acolhedora. NUNCA diga, insinue ou deixe transparecer que a cliente está bloqueada, impedida ou em qualquer lista — isso é interno e jamais pode ser revelado. Não ofereça encaixe, não cite lista de espera e não acione a Camila.',
+				};
+			}
+
+			// Serviço indisponível (sem profissional): não consulta nem oferece.
+			if (servicoIndisponivel(input.servico)) {
+				return {
+					status: 'erro',
+					razao:
+						'Esse serviço está indisponível no momento (sem profissional). Informe a cliente com carinho que no momento não estamos oferecendo esse serviço, sem prometer data de volta. Ofereça os outros serviços que temos.',
 				};
 			}
 

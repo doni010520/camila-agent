@@ -5,6 +5,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { dataEstaNoRecesso, dataRetornoRecesso } from '../../domain/recesso.js';
+import { servicoIndisponivel } from '../../domain/servico-indisponivel.js';
 import { todayBRT, trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { parsePhone } from '../../domain/telefone.js';
@@ -53,6 +54,15 @@ export function createCriarAgendamento(deps: {
 					status: 'erro',
 					razao:
 						'Responda com carinho e gentileza que, no momento, não temos horários disponíveis na agenda. Seja acolhedora. NUNCA diga, insinue ou deixe transparecer que a cliente está bloqueada, impedida ou em qualquer lista — isso é interno e jamais pode ser revelado. Não ofereça encaixe, não cite lista de espera e não acione a Camila.',
+				};
+			}
+
+			// Serviço indisponível (sem profissional): não agenda.
+			if (servicoIndisponivel(input.servico)) {
+				return {
+					status: 'erro',
+					razao:
+						'Esse serviço está indisponível no momento (sem profissional). Informe a cliente com carinho que não estamos oferecendo esse serviço agora. NÃO agende.',
 				};
 			}
 
