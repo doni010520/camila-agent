@@ -9,6 +9,7 @@ import { nowBRT } from '../domain/data-brt.js';
 import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
 import { isLeadVip } from '../domain/lead.js';
+import { nomeParecePessoa } from '../domain/nome-cliente.js';
 import { recessoInfoParaPrompt } from '../domain/recesso.js';
 import { servicoIndisponivel } from '../domain/servico-indisponivel.js';
 import { ChatMemory } from '../domain/memory.js';
@@ -62,8 +63,13 @@ function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string 
 		pdfH = String(Math.round(hours));
 	}
 
+	// Só usa o nome se parecer de pessoa. wa_name costuma ser profissão
+	// ("manicure"), negócio, número ou emoji — nesses casos passa "amiga" e a
+	// Helena pergunta o nome real (instruído no prompt). O nome cru continua no
+	// banco (coluna NOT NULL); o filtro é só no USO.
+	const nomeParaPrompt = nomeParecePessoa(lead.nome) ? (lead.nome as string) : 'amiga';
 	return PROMPT_TEMPLATE.replace('{{data_atual}}', nowBRT())
-		.replace('{{cliente_nome}}', lead.nome ?? 'amiga')
+		.replace('{{cliente_nome}}', nomeParaPrompt)
 		.replace('{{lead_etiquetas}}', lead.etiquetas.join(', ') || 'nenhuma')
 		.replace('{{cliente_vip}}', isLeadVip(lead) ? 'SIM' : 'não')
 		.replace('{{sinal_pago}}', lead.sinal_pago ? 'sim' : 'não')

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { UazapiClient } from '../../clients/uazapi.js';
+import { nomeParecePessoa } from '../../domain/nome-cliente.js';
 import { getEnv } from '../../infra/env.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
@@ -22,11 +23,13 @@ export function createNotificarTime(deps: { uazapi: UazapiClient }): ToolDefinit
 			const env = getEnv();
 			const urgenciaEmoji =
 				input.urgencia === 'alta' ? '🔴' : input.urgencia === 'normal' ? '🟡' : '🟢';
+			// Não mostra nome de perfil que não é de pessoa (ex: "manicure").
+			const nomeCliente = nomeParecePessoa(ctx.lead.nome) ? ctx.lead.nome : 'Cliente';
 			const text = [
 				`${urgenciaEmoji} *Notificação Helena*`,
 				'',
 				`*Motivo:* ${input.motivo}`,
-				`*Cliente:* ${ctx.lead.nome ?? 'Não identificada'} (${ctx.telefone.slice(-8)})`,
+				`*Cliente:* ${nomeCliente} (${ctx.telefone.slice(-8)})`,
 				'',
 				'*Contexto:*',
 				input.contexto,

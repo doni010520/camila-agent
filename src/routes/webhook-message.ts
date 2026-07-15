@@ -13,7 +13,6 @@ import { registrarEvento } from '../domain/eventos.js';
 import { LeadManager } from '../domain/lead.js';
 import { MediaRouter } from '../domain/media-router.js';
 import { ChatMemory } from '../domain/memory.js';
-import { nomeUtilizavel } from '../domain/nome-cliente.js';
 import { chatidToE164 } from '../domain/telefone.js';
 import { createRequestLogger } from '../infra/logger.js';
 import { handleButton } from './webhook-button.js';
@@ -148,10 +147,7 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 		const chat = (rawChat && typeof rawChat === 'object'
 			? (rawChat as { wa_name?: unknown; wa_label?: unknown })
 			: undefined);
-		// Só usa o nome do perfil do WhatsApp se parecer nome de pessoa — evita
-		// salvar "manicure", "Studio X", números, emojis como nome da cliente.
-		const waNameRaw = typeof chat?.wa_name === 'string' ? chat.wa_name : undefined;
-		const waName = nomeUtilizavel(waNameRaw);
+		const waName = typeof chat?.wa_name === 'string' ? chat.wa_name : undefined;
 		const waLabel = typeof chat?.wa_label === 'string'
 			? chat.wa_label
 			: Array.isArray(chat?.wa_label) && typeof chat.wa_label[0] === 'string'
