@@ -76,7 +76,7 @@ export async function bootApp(): Promise<BootResult> {
 	registry.register(createEnviarPdfCurso({ uazapi, supabase, leadManager }));
 	registry.register(createEnvioPix({ uazapi }));
 	registry.register(createValidarComprovante({ openai, uazapi }));
-	registry.register(createAtualizarSinal({ trinks, supabase }));
+	registry.register(createAtualizarSinal({ trinks, supabase, postgres }));
 	registry.register(createMarcarFalta({ trinks, supabase }));
 	registry.register(createNotificarTime({ uazapi }));
 	registry.register(createTransferirHumano({ uazapi, leadManager }));
