@@ -94,10 +94,11 @@ describe('filterByTurno', () => {
 		expect(r).toEqual(['18:00']);
 	});
 
-	it('qualquer returns all except lunch', () => {
+	it('qualquer retorna TODOS os slots (Trinks é a fonte da verdade, sem almoço hardcoded)', () => {
 		const r = filterByTurno(slots, 'qualquer');
-		expect(r).not.toContain('12:00');
-		expect(r).not.toContain('13:00');
+		// 12:00/13:00 agora são retornados se vierem vagos da Trinks
+		expect(r).toContain('12:00');
+		expect(r).toContain('13:00');
 		expect(r).toContain('08:00');
 		expect(r).toContain('14:00');
 	});

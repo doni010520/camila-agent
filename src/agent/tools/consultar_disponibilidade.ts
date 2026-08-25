@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { todayBRT } from '../../domain/data-brt.js';
-import { filterByTurno, isLunchBreak } from '../../domain/horario-funcionamento.js';
+import { filterByTurno } from '../../domain/horario-funcionamento.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { dataEstaNoRecesso } from '../../domain/recesso.js';
 import { servicoIndisponivel } from '../../domain/servico-indisponivel.js';
@@ -138,11 +138,9 @@ export function createConsultarDisponibilidade(deps: {
 					const prof = agenda.find((p) => p.id === profissionalId);
 					if (!prof || prof.horariosVagos.length === 0) continue;
 
-					// Filter by turno
+					// Filter by turno (a disponibilidade real vem do Trinks —
+					// sem almoço hardcoded, que escondia horários livres)
 					let filtered = filterByTurno(prof.horariosVagos, turno);
-
-					// Filter out lunch break
-					filtered = filtered.filter((h) => !isLunchBreak(h));
 
 					// Filter by consecutive slots needed
 					if (slotsNeeded > 1) {
@@ -205,7 +203,7 @@ function filterConsecutiveSlots(horarios: string[], slotsNeeded: number): string
 				m -= 60;
 			}
 			const next = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-			if (!set.has(next) || isLunchBreak(next)) return false;
+			if (!set.has(next)) return false;
 		}
 		return true;
 	});

@@ -111,7 +111,10 @@ describe('consultar_disponibilidade', () => {
 		}
 	});
 
-	it('excludes lunch break slots', async () => {
+	it('🍽️ NÃO esconde 12:00-13:30: a Trinks é a fonte da verdade (se está vago, oferece)', async () => {
+		// Antes, um almoço hardcoded (12:00-13:30) escondia horários que a Camila
+		// tinha livres → Helena dizia "sem vaga" tendo vaga. Agora confia no
+		// horariosVagos da Trinks (que já desconta bloqueios reais).
 		const { tool } = makeTool({
 			horariosVagos: ['11:30', '12:00', '12:30', '13:00', '13:30', '14:00'],
 		});
@@ -119,14 +122,30 @@ describe('consultar_disponibilidade', () => {
 			{ servico: 'Volume Brasileiro', hora_e_turno: 'qualquer', duracao_minutos: 30 },
 			ctx,
 		);
+		expect(result.status).toBe('ok');
 		if (result.status === 'ok') {
 			const allHorarios = (result.opcoes as Array<{ horarios: string[] }>).flatMap(
 				(o) => o.horarios,
 			);
-			expect(allHorarios).not.toContain('12:00');
-			expect(allHorarios).not.toContain('12:30');
-			expect(allHorarios).not.toContain('13:00');
+			// horários de almoço agora SÃO oferecidos (estavam vagos na Trinks)
+			expect(allHorarios).toContain('12:00');
+			expect(allHorarios).toContain('12:30');
+			expect(allHorarios).toContain('13:00');
 			expect(allHorarios).toContain('13:30');
+		}
+	});
+
+	it('🍽️ serviço de 2h atravessa o horário de almoço se a Trinks tem tudo vago', async () => {
+		// Volume Brasileiro (120min) começando 11:30 precisa de 11:30-13:30 vagos.
+		// Com o almoço hardcoded isso era barrado; agora cabe.
+		const { tool } = makeTool({
+			horariosVagos: ['11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30'],
+		});
+		const result = await tool.handler({ servico: 'Volume Brasileiro', hora_e_turno: 'qualquer' }, ctx);
+		expect(result.status).toBe('ok');
+		if (result.status === 'ok') {
+			const allHorarios = (result.opcoes as Array<{ horarios: string[] }>).flatMap((o) => o.horarios);
+			expect(allHorarios).toContain('11:30'); // 11:30-13:30 cabe (atravessa o almoço)
 		}
 	});
 

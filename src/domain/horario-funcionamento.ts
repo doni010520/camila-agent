@@ -65,7 +65,11 @@ export function filterByTurno(
 	turno: 'manha' | 'tarde' | 'noite' | 'qualquer',
 ): string[] {
 	if (turno === 'qualquer') {
-		return horarios.filter((h) => !isLunchBreak(h));
+		// Sem filtro de almoço hardcoded: a fonte da verdade é o horariosVagos
+		// da Trinks (já desconta bloqueios reais, incl. "Lanche"). Remover
+		// 12:00-13:30 fixo escondia horários que a Camila tinha livres e quebrava
+		// a continuidade pra serviços de 2h → Helena dizia "sem vaga" tendo vaga.
+		return horarios;
 	}
 	const ranges: Record<string, { start: string; end: string }> = {
 		manha: { start: '08:00', end: '12:00' },
