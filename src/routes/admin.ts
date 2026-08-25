@@ -506,6 +506,29 @@ export function createAdminRouter(deps: AdminDeps): Hono {
 	});
 
 	/**
+	 * Diagnóstico: envia um menu de botões de teste pra confirmar que os botões
+	 * chegam clicáveis na UAZAPI.
+	 *   GET /admin/diag/menu?tel=5571993061031
+	 */
+	router.get('/admin/diag/menu', async (c) => {
+		const tel = c.req.query('tel');
+		if (!tel) return c.json({ status: 'erro', razao: 'tel obrigatório' }, 400);
+		try {
+			await deps.uazapi.sendMenu({
+				number: tel,
+				text: '🧪 Teste de botões da Helena. Clica num deles pra confirmar que funciona:',
+				choices: [
+					{ label: 'Botão A ✅', id: 'TESTE_a' },
+					{ label: 'Botão B ❌', id: 'TESTE_b' },
+				],
+			});
+			return c.json({ status: 'ok', enviado_para: tel });
+		} catch (err) {
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	/**
 	 * Diagnóstico da instância UAZAPI (WhatsApp). Mostra se está conectada —
 	 * "disconnected" explica por que a Helena para de receber/enviar.
 	 *   GET /admin/diag/uazapi
