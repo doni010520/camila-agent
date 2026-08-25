@@ -7,7 +7,10 @@ import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
 
 const ELIGIBLE_STATUSES = new Set([4, 5]); // Confirmado, Em atendimento
-const HOURS_AFTER_END = 1; // Wait at least 1h after appointment end time
+// Dispara o botão pra Camila assim que o horário de FIM do atendimento passa
+// (a cliente está saindo do estúdio). Camila clica "finalizei" na hora e a
+// cliente recebe a manutenção imediatamente. Rodado a cada ~15min pelo cron.
+const HOURS_AFTER_END = 0;
 
 export interface EnqueteDeps {
 	trinks: TrinksClient;

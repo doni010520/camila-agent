@@ -297,7 +297,34 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			if (result.status === 'ok') {
 				await deps.uazapi.sendText(telefone, `Prontinho! 💖 Sua manutenção tá confirmada pra ${formatarDataManutencao(dataHora)}. Te aguardo!`).catch(() => {});
 			} else {
-				await deps.uazapi.sendText(telefone, `Hum, não consegui confirmar agora: ${('razao' in result ? result.razao : 'erro') }.\nQuer escolher outra data? Me fala um dia/horário que prefere 💖`).catch(() => {});
+				// Horário +15d ocupado: em vez de só pedir, OFERECE horários próximos.
+				let ofereceu = false;
+				const consultarTool = deps.toolRegistry.get('consultar_disponibilidade');
+				if (consultarTool) {
+					try {
+						const disp = await consultarTool.handler(
+							{ servico: servicoNome, data: dataHora.slice(0, 10), hora_e_turno: 'qualquer' },
+							{ telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } },
+						);
+						const opcoes = (disp as { status: string; opcoes?: Array<{ data: string; dia_semana: string; horarios: string[] }> });
+						if (opcoes.status === 'ok' && opcoes.opcoes?.length) {
+							const linhas = opcoes.opcoes.slice(0, 3).map((o) => {
+								const [, mes, dia] = o.data.split('-');
+								return `📅 ${o.dia_semana}, ${dia}/${mes}: ${o.horarios.slice(0, 4).join(', ')}`;
+							});
+							await deps.uazapi.sendText(
+								telefone,
+								`Esse horário acabou de ficar ocupado 😅 Mas tenho essas opções pra sua manutenção:\n\n${linhas.join('\n')}\n\nQual você prefere? 💖`,
+							).catch(() => {});
+							ofereceu = true;
+						}
+					} catch (err) {
+						log.warn({ err }, 'manutencao_sim: falha ao oferecer horários próximos');
+					}
+				}
+				if (!ofereceu) {
+					await deps.uazapi.sendText(telefone, 'Esse horário ficou ocupado 😅 Me fala um dia/horário que prefere pra sua manutenção que eu vejo as opções 💖').catch(() => {});
+				}
 			}
 			break;
 		}
