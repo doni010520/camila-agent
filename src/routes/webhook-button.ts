@@ -250,20 +250,36 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 						{ label: 'Quero outra data', id: `Manut_nao${agId}` },
 					],
 				});
-				// guarda em metadata pra usar no manutencao_sim
+				// Guarda em metadata pra o manutencao_sim usar quando ela clicar.
+				// NÃO é best-effort: sem isso o botao "Sim, confirmo" da cliente
+				// responde "tive um probleminha". mergeMetadata casa o número da
+				// Trinks (com 9º dígito) com o do WhatsApp (sem) e preserva o
+				// metadata existente — um update cru não fazia nenhum dos dois.
+				let guardou = false;
 				try {
-					await deps.supabase.raw
-						.from('leads_energia_solar')
-						.update({
-							metadata: {
-								proxima_manutencao_servico: servicoManutencao,
-								proxima_manutencao_data: novaDataHora,
-								proxima_manutencao_agendamento_origem: agId,
-							},
-						})
-						.eq('telefone', numeroCliente);
-				} catch {
-					/* best-effort */
+					guardou = await params.leadManager.mergeMetadata(numeroCliente, {
+						proxima_manutencao_servico: servicoManutencao,
+						proxima_manutencao_data: novaDataHora,
+						proxima_manutencao_agendamento_origem: agId,
+					});
+				} catch (err) {
+					log.error({ err, cliente: numeroCliente.slice(-8) }, 'mergeMetadata falhou');
+				}
+
+				if (!guardou) {
+					// A cliente recebeu a oferta, mas o clique dela não vai funcionar.
+					// Melhor a Camila saber agora do que a cliente descobrir sozinha.
+					log.error(
+						{ agId, cliente: numeroCliente.slice(-8) },
+						'Oferta de manutenção enviada sem lead correspondente',
+					);
+					await deps.uazapi
+						.sendText(
+							telefone,
+							`✅ ${ag.cliente.nome} finalizada. Mandei a oferta de manutenção pra ${novaDataLegivel}, mas não achei o cadastro dela aqui — se ela confirmar, marca manualmente.`,
+						)
+						.catch(() => {});
+					return;
 				}
 
 				await deps.uazapi

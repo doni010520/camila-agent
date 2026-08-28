@@ -205,12 +205,55 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 		};
 	}
 
+	/** leadManager real o suficiente: guarda o que foi mesclado, pra o teste
+	 *  medir o que ficou salvo em vez de medir chamada de mock. */
+	function fakeLeadManager() {
+		const salvo: Record<string, unknown> = {};
+		return {
+			manager: {
+				mergeMetadata: async (_tel: string, patch: Record<string, unknown>) => {
+					Object.assign(salvo, patch);
+					return true;
+				},
+			},
+			salvo,
+		};
+	}
+
+	function paramsCom(deps: unknown, leadManager: unknown) {
+		return {
+			telefone: '5571999999999',
+			buttonOrListid: 'Fin_sim521608805',
+			deps: deps as never,
+			leadManager: leadManager as never,
+		};
+	}
+
 	it('oferece a manutenção à cliente quando a Trinks confirma status 8', async () => {
 		const deps = makeFinalizarDeps();
-		await handleButton(makeParams('Fin_sim521608805', deps as never));
+		const lm = fakeLeadManager();
+		await handleButton(paramsCom(deps, lm.manager));
 
 		expect(deps.sentMenus).toHaveLength(1);
 		expect(deps.sentMenus[0]?.text).toContain('manutenção');
+	});
+
+	it('guarda o serviço e a data da manutenção pro clique da cliente funcionar', async () => {
+		const deps = makeFinalizarDeps();
+		const lm = fakeLeadManager();
+		await handleButton(paramsCom(deps, lm.manager));
+
+		// Volume light (27/08 14:00) → manutenção 15 dias depois, mesmo horário
+		expect(lm.salvo.proxima_manutencao_servico).toBe('Manutenção volume light 15 dias');
+		expect(lm.salvo.proxima_manutencao_data).toBe('2026-09-11T14:00:00');
+	});
+
+	it('avisa a Camila quando o cadastro da cliente não foi encontrado', async () => {
+		const deps = makeFinalizarDeps();
+		const semLead = { mergeMetadata: async () => false };
+		await handleButton(paramsCom(deps, semLead));
+
+		expect(deps.sentTexts.join(' | ')).toContain('não achei o cadastro dela');
 	});
 
 	it('não acusa falha de finalização para a Camila quando deu certo', async () => {

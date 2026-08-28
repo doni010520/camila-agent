@@ -196,6 +196,64 @@ export class LeadManager {
 		await this.updateLead(telefone, { pdf_curso_enviado_em: new Date().toISOString() });
 	}
 
+	/**
+	 * Acha o lead tolerando a diferença de formato entre WhatsApp e Trinks.
+	 *
+	 * O chatid do WhatsApp vem SEM o 9º dígito ("557192083199") e a Trinks
+	 * guarda COM ("5571992083199"). Comparando exato, 6 de 216 leads batem.
+	 * Pelos últimos 8 dígitos, 128 de 237. Tenta o exato primeiro (mais barato
+	 * e sem ambiguidade) e só então cai pro sufixo.
+	 */
+	async findByTelefoneFlex(telefone: string): Promise<LeadCamilaRow | null> {
+		const exato = await this.getLead(telefone);
+		if (exato) return exato;
+
+		const last8 = telefone.replace(/\D/g, '').slice(-8);
+		if (last8.length < 8) return null;
+
+		const { data, error } = await this.supabase.raw
+			.from('leads_energia_solar')
+			.select('*')
+			.like('telefone', `%${last8}`)
+			.limit(2);
+		if (error) throw new Error(`Lead flex get: ${error.message}`);
+
+		const rows = (data ?? []) as LeadCamilaRow[];
+		// 2+ leads com o mesmo sufixo: ambíguo, não arriscamos escrever no errado.
+		if (rows.length !== 1) {
+			if (rows.length > 1) {
+				this.log.warn(
+					{ last8, encontrados: rows.length },
+					'Mais de um lead com o mesmo final — não dá pra decidir',
+				);
+			}
+			return null;
+		}
+		return rows[0] ?? null;
+	}
+
+	/**
+	 * Mescla chaves em `metadata` preservando o que já estava lá.
+	 *
+	 * Um `.update({ metadata: {...} })` cru SOBRESCREVE o jsonb inteiro e apaga
+	 * `ia_off_since` (TTL de reativação da IA) e `intervencao_humana_em` — era o
+	 * que o fluxo de manutenção fazia. Retorna false se não achou o lead.
+	 */
+	async mergeMetadata(telefone: string, patch: Record<string, unknown>): Promise<boolean> {
+		const lead = await this.findByTelefoneFlex(telefone);
+		if (!lead) {
+			this.log.warn({ telefone: telefone.slice(-8) }, 'mergeMetadata: lead não encontrado');
+			return false;
+		}
+		const merged = { ...(lead.metadata ?? {}), ...patch };
+		const { error } = await this.supabase.raw
+			.from('leads_energia_solar')
+			.update({ metadata: merged })
+			.eq('telefone', lead.telefone);
+		if (error) throw new Error(`Lead mergeMetadata: ${error.message}`);
+		return true;
+	}
+
 	async getLead(telefone: string): Promise<LeadCamilaRow | null> {
 		const { data, error } = await this.supabase.raw
 			.from('leads_energia_solar')
