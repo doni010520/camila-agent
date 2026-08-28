@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
+import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { todayBRT } from '../../domain/data-brt.js';
 import { filterByTurno } from '../../domain/horario-funcionamento.js';
-import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { dataEstaNoRecesso } from '../../domain/recesso.js';
 import { servicoIndisponivel } from '../../domain/servico-indisponivel.js';
 import { getAgendaDoDiaCached } from '../../infra/disponibilidade-cache.js';
@@ -21,6 +21,16 @@ const inputSchema = z.object({
 		.number()
 		.optional()
 		.describe('Duração em minutos. Se omitido, deduz do serviço.'),
+	hora_minima: z
+		.string()
+		.optional()
+		.describe(
+			'Hora mais cedo que serve pra cliente, "HH:MM". Use quando ela pedir algo como "só depois das 17h" — o turno sozinho não expressa isso.',
+		),
+	hora_maxima: z
+		.string()
+		.optional()
+		.describe('Hora mais tarde que serve pra cliente, "HH:MM" (hora de INÍCIO do atendimento).'),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -95,6 +105,17 @@ export function createConsultarDisponibilidade(deps: {
 					horarios: string[];
 				}> = [];
 
+				// Horários que CABEM (duração ok) mas ficaram de fora do filtro pedido
+				// (turno / hora_minima / hora_maxima). Sem isso a tool devolve uma lista
+				// menor sem dizer por quê, e a Helena conclui que a vaga foi ocupada —
+				// foi assim que ela disse a uma cliente que o 12:00 do dia 18/09 tinha
+				// acabado, com ele livre. Ver tests/tools/consultar_disponibilidade.spec.ts.
+				const alternativas: Array<{
+					data: string;
+					dia_semana: string;
+					horarios: string[];
+				}> = [];
+
 				const DAYS_PT = [
 					'domingo',
 					'segunda-feira',
@@ -138,14 +159,26 @@ export function createConsultarDisponibilidade(deps: {
 					const prof = agenda.find((p) => p.id === profissionalId);
 					if (!prof || prof.horariosVagos.length === 0) continue;
 
-					// Filter by turno (a disponibilidade real vem do Trinks —
-					// sem almoço hardcoded, que escondia horários livres)
-					let filtered = filterByTurno(prof.horariosVagos, turno);
+					// ORDEM IMPORTA: primeiro descobrimos quais inícios comportam a
+					// duração INTEIRA do serviço (sobre a agenda completa), e só depois
+					// filtramos os INÍCIOS pelo que a cliente pediu.
+					//
+					// O inverso — que era o que estava aqui — descarta todo atendimento
+					// que começa dentro do turno e termina fora dele. Ex real (04/09):
+					// um serviço de 2h às 10:30 vai até 12:30; filtrando "manhã" antes,
+					// o 12:00 sumia e o 10:30 morria por falta de um slot que o próprio
+					// filtro tinha removido. A Helena dizia "não tenho nada de manhã"
+					// com três horários vendáveis livres.
+					const cabem =
+						slotsNeeded > 1
+							? filterConsecutiveSlots(prof.horariosVagos, slotsNeeded)
+							: [...prof.horariosVagos];
 
-					// Filter by consecutive slots needed
-					if (slotsNeeded > 1) {
-						filtered = filterConsecutiveSlots(filtered, slotsNeeded);
-					}
+					const horaMin = inp.hora_minima;
+					const horaMax = inp.hora_maxima;
+					let filtered = filterByTurno(cabem, turno);
+					if (horaMin) filtered = filtered.filter((h) => h >= horaMin);
+					if (horaMax) filtered = filtered.filter((h) => h <= horaMax);
 
 					if (filtered.length > 0) {
 						opcoes.push({
@@ -153,8 +186,21 @@ export function createConsultarDisponibilidade(deps: {
 							dia_semana: DAYS_PT[dayOfWeek] ?? '',
 							horarios: filtered,
 						});
+					} else if (cabem.length > 0) {
+						alternativas.push({
+							data: dateStr,
+							dia_semana: DAYS_PT[dayOfWeek] ?? '',
+							horarios: cabem,
+						});
 					}
 				}
+
+				const servicoInfo = {
+					id: svc.id,
+					nome: svc.nome,
+					duracao: svc.duracao_minutos,
+					preco: svc.preco ?? 0,
+				};
 
 				if (opcoes.length === 0) {
 					// Distingue "agenda cheia" de "não consegui consultar" (rate limit/
@@ -163,7 +209,20 @@ export function createConsultarDisponibilidade(deps: {
 					if (diasComErro > 0) {
 						return {
 							status: 'erro',
-							razao: 'Não consegui consultar a agenda agora (instabilidade). Tente de novo em instantes.',
+							razao:
+								'Não consegui consultar a agenda agora (instabilidade). Tente de novo em instantes.',
+						};
+					}
+					// Nada no filtro pedido, mas a agenda TEM vaga em outro horário.
+					// Devolver "sem horários" aqui seria mentira — e a Helena repassaria
+					// como "a vaga foi ocupada".
+					if (alternativas.length > 0) {
+						return {
+							status: 'ok',
+							servico: servicoInfo,
+							opcoes: [],
+							alternativas: alternativas.slice(0, MAX_DIAS_OFERTA),
+							nota: 'Não há horário livre DENTRO do que a cliente pediu (turno/hora), mas a agenda tem os horários em "alternativas". NÃO diga que a vaga foi ocupada, que a agenda está cheia ou que o horário "não aparece" — nada disso é verdade. Explique com carinho que no horário que ela pediu o procedimento não cabe, e ofereça as alternativas.',
 						};
 					}
 					return { status: 'erro', razao: 'Sem horários disponíveis nos próximos 14 dias' };
@@ -171,13 +230,16 @@ export function createConsultarDisponibilidade(deps: {
 
 				return {
 					status: 'ok',
-					servico: {
-						id: svc.id,
-						nome: svc.nome,
-						duracao: svc.duracao_minutos,
-						preco: svc.preco ?? 0,
-					},
+					servico: servicoInfo,
 					opcoes,
+					// Dias que não deu pra consultar (429/timeout da Trinks). Sem isso a
+					// Helena afirma "só tenho esses" sem saber que dias foram pulados.
+					...(diasComErro > 0
+						? {
+								dias_nao_consultados: diasComErro,
+								nota: `Não consegui consultar ${diasComErro} dia(s) por instabilidade da agenda. Ofereça os horários acima, mas NÃO afirme que não há mais nada — pode haver vaga nos dias que falharam.`,
+							}
+						: {}),
 				};
 			}
 		},

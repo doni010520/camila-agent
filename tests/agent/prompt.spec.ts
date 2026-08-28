@@ -5,13 +5,16 @@ import { describe, expect, it } from 'vitest';
 const promptPath = resolve(import.meta.dirname, '../../src/agent/prompt.md');
 const prompt = readFileSync(promptPath, 'utf-8');
 
-describe('Helena prompt v14', () => {
-	it('is under 16k characters (enxuto)', () => {
+describe('Helena prompt v15', () => {
+	it('is under 18k characters (enxuto)', () => {
 		// Teto pra manter o prompt enxuto (foco + custo de tokens). Cresceu com
 		// regras de produção (anti-alucinação, VIP, recesso, serviços da Camila,
 		// captura de nome não-pessoal). ~15k chars ≈ 3,7k tokens — folgado pro
-		// gpt-4.1-mini.
-		expect(prompt.length).toBeLessThan(16000);
+		// gpt-4.1-mini. Subiu de 16k -> 18k em 28/08/2026 pra caber a seção
+		// "Horário que a cliente pediu" (hora_minima/hora_maxima + proibição de
+		// inventar que a vaga foi ocupada). O teto existe pra segurar bloat: se
+		// for subir de novo, corte algo antes.
+		expect(prompt.length).toBeLessThan(18000);
 	});
 
 	it('does NOT reference ghost tool names (SPEC §10)', () => {
@@ -69,5 +72,19 @@ describe('Helena prompt v14', () => {
 	it('does NOT reference leads_energia_solar (SPEC §17)', () => {
 		expect(prompt).not.toContain('leads_energia_solar');
 		expect(prompt).not.toContain('levesol');
+	});
+});
+
+// Regressão 28/08/2026 — a Helena não sabia pedir "após as 17h" e inventava
+// que a vaga tinha sido ocupada quando a tool devolvia menos opções.
+describe('prompt: horário pedido pela cliente', () => {
+	it('ensina a usar hora_minima/hora_maxima', () => {
+		expect(prompt).toContain('hora_minima');
+		expect(prompt).toContain('hora_maxima');
+	});
+
+	it('proíbe afirmar que a vaga foi ocupada com base em lista mais curta', () => {
+		expect(prompt).toContain('alternativas');
+		expect(prompt.toLowerCase()).toContain('nunca invente que um horário foi ocupado');
 	});
 });
