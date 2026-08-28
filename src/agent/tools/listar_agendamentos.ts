@@ -4,18 +4,7 @@ import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
-import { ACTIVE_STATUSES } from "../../domain/trinks-status.js";
-
-const STATUS_NAMES: Record<number, string> = {
-	1: 'Agendado',
-	2: 'Aguardando confirmação',
-	3: 'Aguardando confirmação do estabelecimento',
-	4: 'Confirmado',
-	5: 'Em atendimento',
-	6: 'Finalizado',
-	7: 'Cancelado',
-	8: 'Cliente não compareceu',
-};
+import { ACTIVE_STATUSES, STATUS_NAMES } from '../../domain/trinks-status.js';
 
 const inputSchema = z.object({
 	telefone: z.string().describe('Telefone do cliente'),

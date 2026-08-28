@@ -1,19 +1,24 @@
 /**
  * Trinks appointment status IDs.
  *
- * IMPORTANT: These IDs were discovered empirically via direct API inspection.
- * The Trinks public docs are unclear; do NOT assume sequential numbering.
+ * ⚠️ VERIFICADOS NA API REAL em 28/08/2026 (varredura dos agendamentos de agosto
+ * do estabelecimento 44992). Os IDs 6 e 8 estavam TROCADOS no código — eram
+ * suposição, não medição. O log de produção de 27/08 flagrou:
+ *   "Finalize verify failed {agId:521608805, status:{id:8, nome:'Finalizado'}}"
  *
- * Confirmed (seen in real data):
+ * Confirmados (vistos em dados reais, com o nome que a Trinks devolve):
  *  - 3: Aguardando Confirmação do Estabelecimento
  *  - 4: Confirmado
- *  - 9: Cancelado  ← NOT 7!
+ *  - 6: Cliente não compareceu
+ *  - 8: Finalizado
+ *  - 9: Cancelado
  *
- * Likely (used in PATCH endpoints but not yet seen as listed status):
+ * Ainda não observados em dados reais (usados só nos PATCH):
  *  - 1: Agendado
+ *  - 2: Aguardando confirmação
  *  - 5: Em atendimento
- *  - 6: Finalizado
- *  - 8: Cliente não compareceu
+ *
+ * Ao mexer aqui, MEÇA na API antes — não deduza pela numeração.
  */
 export const TRINKS_STATUS = {
 	AGENDADO: 1,
@@ -21,8 +26,8 @@ export const TRINKS_STATUS = {
 	AGUARDANDO_CONFIRMACAO_ESTABELECIMENTO: 3,
 	CONFIRMADO: 4,
 	EM_ATENDIMENTO: 5,
-	FINALIZADO: 6,
-	CLIENTE_FALTOU: 8,
+	CLIENTE_FALTOU: 6,
+	FINALIZADO: 8,
 	CANCELADO: 9,
 } as const;
 
@@ -48,7 +53,7 @@ export const STATUS_NAMES: Record<number, string> = {
 	3: 'Aguardando Confirmação do Estabelecimento',
 	4: 'Confirmado',
 	5: 'Em atendimento',
-	6: 'Finalizado',
-	8: 'Cliente não compareceu',
+	6: 'Cliente não compareceu',
+	8: 'Finalizado',
 	9: 'Cancelado',
 };

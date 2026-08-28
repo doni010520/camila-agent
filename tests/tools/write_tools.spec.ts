@@ -13,14 +13,14 @@ const ctx: ToolContext = {
 // ── marcar_falta ──
 
 describe('marcar_falta', () => {
-	function makeFaltaDeps(statusAfter = 8) {
+	function makeFaltaDeps(statusAfter = 6) {
 		const trinks = {
 			marcarClienteFaltou: vi.fn().mockResolvedValue({ ok: true }),
 			getAgendamento: vi.fn().mockResolvedValue({
 				id: 500,
 				status: {
 					id: statusAfter,
-					nome: statusAfter === 8 ? 'Cliente não compareceu' : 'Confirmado',
+					nome: statusAfter === 6 ? 'Cliente não compareceu' : 'Confirmado',
 				},
 				cliente: { id: 100, nome: 'Maria' },
 				servico: { id: 10, nome: 'VB' },
@@ -37,13 +37,13 @@ describe('marcar_falta', () => {
 		};
 	}
 
-	it('✅ marks falta and verifies status=8', async () => {
-		const { tool } = makeFaltaDeps(8);
+	it('✅ marks falta and verifies status=6 (CLIENTE_FALTOU real da API)', async () => {
+		const { tool } = makeFaltaDeps(6);
 		const r = await tool.handler({ agendamento_id: 500 }, ctx);
 		expect(r.status).toBe('ok');
 	});
 
-	it('🔴 GHOST: PATCH ok + GET shows status≠8 → erro', async () => {
+	it('🔴 GHOST: PATCH ok + GET shows status≠6 → erro', async () => {
 		const { tool } = makeFaltaDeps(4);
 		const r = await tool.handler({ agendamento_id: 500 }, ctx);
 		expect(r.status).toBe('erro');

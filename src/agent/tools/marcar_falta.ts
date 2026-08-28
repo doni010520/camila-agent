@@ -31,7 +31,7 @@ export function createMarcarFalta(deps: {
 				};
 			}
 
-			// VERIFY: status should be 8 (Cliente não compareceu)
+			// VERIFY: status deve virar CLIENTE_FALTOU (6, medido na API)
 			try {
 				const readBack = await trinks.getAgendamento(input.agendamento_id);
 				if (readBack.status.id !== TRINKS_STATUS.CLIENTE_FALTOU) {
@@ -42,7 +42,10 @@ export function createMarcarFalta(deps: {
 				}
 
 				try {
-					await supabase.upsertAgendamento({ id: input.agendamento_id, status_id: TRINKS_STATUS.CLIENTE_FALTOU });
+					await supabase.upsertAgendamento({
+						id: input.agendamento_id,
+						status_id: TRINKS_STATUS.CLIENTE_FALTOU,
+					});
 				} catch {
 					/* best-effort */
 				}

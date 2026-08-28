@@ -106,11 +106,11 @@ describe('handleButton', () => {
 	// ── enquete_sim ──
 
 	describe('enquete_sim (id_sim)', () => {
-		it('✅ happy: finalizes + verifies status=6 + sends confirmation', async () => {
+		it('✅ happy: finalizes + verifies status=8 + sends confirmation', async () => {
 			const deps = makeDeps({
 				getAfterPatch: vi.fn().mockResolvedValue({
 					id: 500,
-					status: { id: 6, nome: 'Finalizado' },
+					status: { id: 8, nome: 'Finalizado' }, // status real medido na API
 					cliente: { id: 100, nome: 'Maria' },
 					servico: { id: 10, nome: 'VB' },
 					profissional: { id: 170223, nome: 'Camila' },
@@ -122,11 +122,11 @@ describe('handleButton', () => {
 			await handleButton(makeParams('id_sim500', deps));
 
 			expect(deps.trinks.finalizarAgendamento).toHaveBeenCalledWith(500);
-			expect(deps.supabase.upsertAgendamento).toHaveBeenCalledWith({ id: 500, status_id: 6 });
+			expect(deps.supabase.upsertAgendamento).toHaveBeenCalledWith({ id: 500, status_id: 8 });
 			expect(deps.sentTexts.some((t) => t.includes('amado o resultado'))).toBe(true);
 		});
 
-		it('🔴 GHOST: finalize ok + GET shows status≠6 → no confirmation sent', async () => {
+		it('🔴 GHOST: finalize ok + GET shows status≠8 → no confirmation sent', async () => {
 			const deps = makeDeps({
 				getAfterPatch: vi.fn().mockResolvedValue({
 					id: 500,
@@ -155,5 +155,70 @@ describe('handleButton', () => {
 
 			expect(deps.sentTexts.some((t) => t.includes('Quando finalizar'))).toBe(true);
 		});
+	});
+});
+
+// ── Regressão de produção (28/08/2026) ──
+// A Camila clicou "Sim, finalizei ✅" 5 vezes e NENHUMA oferta de manutenção saiu.
+// Causa: a Trinks grava status 8 ("Finalizado"), mas o código verificava contra 6.
+// A verificação falhava sempre e o fluxo dava return antes de ofertar a manutenção.
+describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
+	function makeFinalizarDeps() {
+		const base = makeDeps();
+		const agendamento = {
+			id: 521608805,
+			status: { id: 8, nome: 'Finalizado' }, // ← o que a Trinks devolve de verdade
+			cliente: { id: 100, nome: 'Maria Silva' },
+			servico: { id: 10, nome: 'Volume light' },
+			profissional: { id: 170223, nome: 'Camila' },
+			dataHoraInicio: '2026-08-27T14:00:00',
+			duracaoEmMinutos: 120,
+			valor: 145,
+		};
+		const sentMenus: Array<{ number: string; text: string }> = [];
+		return {
+			...base,
+			trinks: {
+				...base.trinks,
+				getAgendamento: vi.fn().mockResolvedValue(agendamento),
+				finalizarAgendamento: vi.fn().mockResolvedValue({ ok: true }),
+				getCliente: vi.fn().mockResolvedValue({
+					id: 100,
+					nome: 'Maria Silva',
+					telefones: [{ ddi: '55', ddd: '71', telefone: '999999999' }],
+				}),
+			},
+			uazapi: {
+				...base.uazapi,
+				sendMenu: vi.fn().mockImplementation(async (o: { number: string; text: string }) => {
+					sentMenus.push(o);
+				}),
+			},
+			supabase: {
+				...base.supabase,
+				raw: {
+					from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }),
+				},
+			},
+			postgres: { findPhoneByTrinksId: vi.fn().mockResolvedValue(null) },
+			sentMenus,
+		};
+	}
+
+	it('oferece a manutenção à cliente quando a Trinks confirma status 8', async () => {
+		const deps = makeFinalizarDeps();
+		await handleButton(makeParams('Fin_sim521608805', deps as never));
+
+		expect(deps.sentMenus).toHaveLength(1);
+		expect(deps.sentMenus[0]?.text).toContain('manutenção');
+	});
+
+	it('não acusa falha de finalização para a Camila quando deu certo', async () => {
+		const deps = makeFinalizarDeps();
+		await handleButton(makeParams('Fin_sim521608805', deps as never));
+
+		const avisos = deps.sentTexts.join(' | ');
+		expect(avisos).not.toContain('não confirmou no Trinks');
+		expect(avisos).toContain('finalizada');
 	});
 });

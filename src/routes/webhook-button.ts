@@ -55,18 +55,24 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				return;
 			}
 
-			// VERIFY: status must be 4 (Confirmado) — anti-ghost IB1
+			// VERIFY: status deve virar CONFIRMADO (4) — anti-fantasma IB1
 			try {
 				const readBack = await deps.trinks.getAgendamento(agId);
-				if (readBack.status.id !== 4) {
-					log.error({ agId, status: readBack.status }, 'Confirm verify failed: status not 4');
+				if (readBack.status.id !== TRINKS_STATUS.CONFIRMADO) {
+					log.error(
+						{ agId, status: readBack.status },
+						'Confirm verify failed: status != CONFIRMADO',
+					);
 					await deps.uazapi
 						.sendText(telefone, 'Tive um probleminha ao confirmar. Já chamei a Camila 💖')
 						.catch(() => {});
 					return;
 				}
 				try {
-					await deps.supabase.upsertAgendamento({ id: agId, status_id: 4 });
+					await deps.supabase.upsertAgendamento({
+						id: agId,
+						status_id: TRINKS_STATUS.CONFIRMADO,
+					});
 				} catch {
 					/* best-effort */
 				}
@@ -100,15 +106,21 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				return;
 			}
 
-			// VERIFY: status must be 6 (Finalizado) — anti-ghost IB1
+			// VERIFY: status deve virar FINALIZADO (8, medido na API) — anti-fantasma IB1
 			try {
 				const readBack = await deps.trinks.getAgendamento(agId);
-				if (readBack.status.id !== 6) {
-					log.error({ agId, status: readBack.status }, 'Finalize verify failed: status not 6');
+				if (readBack.status.id !== TRINKS_STATUS.FINALIZADO) {
+					log.error(
+						{ agId, status: readBack.status },
+						'Finalize verify failed: status != FINALIZADO',
+					);
 					return;
 				}
 				try {
-					await deps.supabase.upsertAgendamento({ id: agId, status_id: 6 });
+					await deps.supabase.upsertAgendamento({
+						id: agId,
+						status_id: TRINKS_STATUS.FINALIZADO,
+					});
 				} catch {
 					/* best-effort */
 				}
@@ -139,14 +151,15 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				return;
 			}
 			const agId = Number(agendamentoId);
-			
 
 			let ag: Awaited<ReturnType<typeof deps.trinks.getAgendamento>>;
 			try {
 				ag = await deps.trinks.getAgendamento(agId);
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to get ag for finalizar_sim');
-				await deps.uazapi.sendText(telefone, `❌ Não consegui ler o agendamento ${agId} pra finalizar.`).catch(() => {});
+				await deps.uazapi
+					.sendText(telefone, `❌ Não consegui ler o agendamento ${agId} pra finalizar.`)
+					.catch(() => {});
 				return;
 			}
 
@@ -155,7 +168,9 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				await deps.trinks.finalizarAgendamento(agId);
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to finalize via grupo button');
-				await deps.uazapi.sendText(telefone, `❌ Erro ao finalizar ${ag.cliente.nome} no sistema.`).catch(() => {});
+				await deps.uazapi
+					.sendText(telefone, `❌ Erro ao finalizar ${ag.cliente.nome} no sistema.`)
+					.catch(() => {});
 				return;
 			}
 
@@ -163,10 +178,16 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				const readBack = await deps.trinks.getAgendamento(agId);
 				if (readBack.status.id !== TRINKS_STATUS.FINALIZADO) {
 					log.error({ agId, status: readBack.status }, 'Finalize verify failed');
-					await deps.uazapi.sendText(telefone, `⚠️ Finalização de ${ag.cliente.nome} não confirmou no Trinks.`).catch(() => {});
+					await deps.uazapi
+						.sendText(telefone, `⚠️ Finalização de ${ag.cliente.nome} não confirmou no Trinks.`)
+						.catch(() => {});
 					return;
 				}
-				try { await deps.supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.FINALIZADO }); } catch { /* */ }
+				try {
+					await deps.supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.FINALIZADO });
+				} catch {
+					/* */
+				}
 			} catch (err) {
 				log.error({ err, agId }, 'Finalize verify read-back failed');
 				return;
@@ -178,7 +199,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				cliente = await deps.trinks.getCliente(ag.cliente.id);
 			} catch {
 				log.warn({ clienteId: ag.cliente.id }, 'Sem cliente — manutenção não oferecida');
-				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone).`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone).`,
+					)
+					.catch(() => {});
 				return;
 			}
 			let numeroCliente: string | null = null;
@@ -190,7 +216,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			}
 			if (!numeroCliente) {
 				log.warn({ clienteId: ag.cliente.id }, 'Sem telefone — manutenção não oferecida');
-				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone no cadastro).`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. Não consegui mandar manutenção (sem telefone no cadastro).`,
+					)
+					.catch(() => {});
 				return;
 			}
 
@@ -198,7 +229,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			const servicoManutencao = getManutencaoServiceName(ag.servico.nome);
 			if (!servicoManutencao) {
 				log.warn({ servico: ag.servico.nome }, 'Serviço sem mapeamento de manutenção');
-				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Serviço "${ag.servico.nome}" não tem manutenção mapeada — falar com cliente manualmente.`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. Serviço "${ag.servico.nome}" não tem manutenção mapeada — falar com cliente manualmente.`,
+					)
+					.catch(() => {});
 				return;
 			}
 			const novaDataHora = calcularProximaManutencao(ag.dataHoraInicio, 15);
@@ -216,15 +252,34 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				});
 				// guarda em metadata pra usar no manutencao_sim
 				try {
-					await deps.supabase.raw.from('leads_energia_solar').update({
-						metadata: { proxima_manutencao_servico: servicoManutencao, proxima_manutencao_data: novaDataHora, proxima_manutencao_agendamento_origem: agId },
-					}).eq('telefone', numeroCliente);
-				} catch { /* best-effort */ }
+					await deps.supabase.raw
+						.from('leads_energia_solar')
+						.update({
+							metadata: {
+								proxima_manutencao_servico: servicoManutencao,
+								proxima_manutencao_data: novaDataHora,
+								proxima_manutencao_agendamento_origem: agId,
+							},
+						})
+						.eq('telefone', numeroCliente);
+				} catch {
+					/* best-effort */
+				}
 
-				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. Mandei oferta de manutenção pra ${novaDataLegivel}.`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. Mandei oferta de manutenção pra ${novaDataLegivel}.`,
+					)
+					.catch(() => {});
 			} catch (err) {
 				log.error({ err, agId }, 'Failed to send manutencao menu');
-				await deps.uazapi.sendText(telefone, `✅ ${ag.cliente.nome} finalizada. ⚠️ Falha ao enviar manutenção: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. ⚠️ Falha ao enviar manutenção: ${err instanceof Error ? err.message : 'unknown'}`,
+					)
+					.catch(() => {});
 			}
 			break;
 		}
@@ -233,7 +288,7 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			// Camila marcou que cliente não compareceu (no grupo)
 			if (!agendamentoId) return;
 			const agId = Number(agendamentoId);
-			
+
 			let ag: Awaited<ReturnType<typeof deps.trinks.getAgendamento>>;
 			try {
 				ag = await deps.trinks.getAgendamento(agId);
@@ -243,11 +298,20 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			}
 			try {
 				await deps.trinks.marcarClienteFaltou(agId);
-				await deps.supabase.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.CLIENTE_FALTOU }).catch(() => undefined);
-				await deps.uazapi.sendText(telefone, `📝 ${ag.cliente.nome} marcada como não compareceu.`).catch(() => {});
+				await deps.supabase
+					.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.CLIENTE_FALTOU })
+					.catch(() => undefined);
+				await deps.uazapi
+					.sendText(telefone, `📝 ${ag.cliente.nome} marcada como não compareceu.`)
+					.catch(() => {});
 			} catch (err) {
 				log.error({ err, agId }, 'finalizar_nao: marcar falta failed');
-				await deps.uazapi.sendText(telefone, `❌ Erro ao marcar falta da ${ag.cliente.nome}: ${err instanceof Error ? err.message : 'unknown'}`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`❌ Erro ao marcar falta da ${ag.cliente.nome}: ${err instanceof Error ? err.message : 'unknown'}`,
+					)
+					.catch(() => {});
 			}
 			break;
 		}
@@ -264,10 +328,19 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				.eq('telefone', telefone)
 				.maybeSingle();
 			const meta = (lead.data?.metadata ?? {}) as Record<string, unknown>;
-			const servicoNome = typeof meta.proxima_manutencao_servico === 'string' ? meta.proxima_manutencao_servico : null;
-			const dataHora = typeof meta.proxima_manutencao_data === 'string' ? meta.proxima_manutencao_data : null;
+			const servicoNome =
+				typeof meta.proxima_manutencao_servico === 'string'
+					? meta.proxima_manutencao_servico
+					: null;
+			const dataHora =
+				typeof meta.proxima_manutencao_data === 'string' ? meta.proxima_manutencao_data : null;
 			if (!servicoNome || !dataHora) {
-				await deps.uazapi.sendText(telefone, 'Tive um probleminha ao confirmar sua manutenção. Já avisei a Camila 💖').catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						'Tive um probleminha ao confirmar sua manutenção. Já avisei a Camila 💖',
+					)
+					.catch(() => {});
 				log.error({ telefone, meta }, 'manutencao_sim sem dados em metadata');
 				return;
 			}
@@ -283,19 +356,29 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			try {
 				ag = await deps.trinks.getAgendamento(origemId);
 			} catch {
-				await deps.uazapi.sendText(telefone, 'Tive um probleminha. Já chamei a Camila 💖').catch(() => {});
+				await deps.uazapi
+					.sendText(telefone, 'Tive um probleminha. Já chamei a Camila 💖')
+					.catch(() => {});
 				return;
 			}
 
-			const result = await criarTool.handler({
-				telefone,
-				nome: ag.cliente.nome,
-				servico: servicoNome,
-				data_e_hora: dataHora,
-			}, { telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } });
+			const result = await criarTool.handler(
+				{
+					telefone,
+					nome: ag.cliente.nome,
+					servico: servicoNome,
+					data_e_hora: dataHora,
+				},
+				{ telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } },
+			);
 
 			if (result.status === 'ok') {
-				await deps.uazapi.sendText(telefone, `Prontinho! 💖 Sua manutenção tá confirmada pra ${formatarDataManutencao(dataHora)}. Te aguardo!`).catch(() => {});
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`Prontinho! 💖 Sua manutenção tá confirmada pra ${formatarDataManutencao(dataHora)}. Te aguardo!`,
+					)
+					.catch(() => {});
 			} else {
 				// Horário +15d ocupado: em vez de só pedir, OFERECE horários próximos.
 				let ofereceu = false;
@@ -306,16 +389,21 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 							{ servico: servicoNome, data: dataHora.slice(0, 10), hora_e_turno: 'qualquer' },
 							{ telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } },
 						);
-						const opcoes = (disp as { status: string; opcoes?: Array<{ data: string; dia_semana: string; horarios: string[] }> });
+						const opcoes = disp as {
+							status: string;
+							opcoes?: Array<{ data: string; dia_semana: string; horarios: string[] }>;
+						};
 						if (opcoes.status === 'ok' && opcoes.opcoes?.length) {
 							const linhas = opcoes.opcoes.slice(0, 3).map((o) => {
 								const [, mes, dia] = o.data.split('-');
 								return `📅 ${o.dia_semana}, ${dia}/${mes}: ${o.horarios.slice(0, 4).join(', ')}`;
 							});
-							await deps.uazapi.sendText(
-								telefone,
-								`Esse horário acabou de ficar ocupado 😅 Mas tenho essas opções pra sua manutenção:\n\n${linhas.join('\n')}\n\nQual você prefere? 💖`,
-							).catch(() => {});
+							await deps.uazapi
+								.sendText(
+									telefone,
+									`Esse horário acabou de ficar ocupado 😅 Mas tenho essas opções pra sua manutenção:\n\n${linhas.join('\n')}\n\nQual você prefere? 💖`,
+								)
+								.catch(() => {});
 							ofereceu = true;
 						}
 					} catch (err) {
@@ -323,7 +411,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 					}
 				}
 				if (!ofereceu) {
-					await deps.uazapi.sendText(telefone, 'Esse horário ficou ocupado 😅 Me fala um dia/horário que prefere pra sua manutenção que eu vejo as opções 💖').catch(() => {});
+					await deps.uazapi
+						.sendText(
+							telefone,
+							'Esse horário ficou ocupado 😅 Me fala um dia/horário que prefere pra sua manutenção que eu vejo as opções 💖',
+						)
+						.catch(() => {});
 				}
 			}
 			break;

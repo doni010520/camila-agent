@@ -4,7 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
 import { todayBRT } from '../../domain/data-brt.js';
-import { ACTIVE_STATUSES } from '../../domain/trinks-status.js';
+import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './_registry.js';
 
 const inputSchema = z.object({
@@ -92,10 +92,10 @@ export function createAtualizarSinal(deps: {
 				};
 			}
 
-			// 2. VERIFY: check status changed to 4 (Confirmado)
+			// 2. VERIFY: status deve virar CONFIRMADO (4)
 			try {
 				const readBack = await trinks.getAgendamento(agendamentoId);
-				if (readBack.status.id !== 4) {
+				if (readBack.status.id !== TRINKS_STATUS.CONFIRMADO) {
 					return {
 						status: 'erro',
 						razao: `Confirmação não verificada. Status atual: ${readBack.status.nome} (${readBack.status.id})`,
@@ -114,7 +114,10 @@ export function createAtualizarSinal(deps: {
 
 				// Mirror confirmation to Supabase (best-effort)
 				try {
-					await supabase.upsertAgendamento({ id: agendamentoId, status_id: 4 });
+					await supabase.upsertAgendamento({
+						id: agendamentoId,
+						status_id: TRINKS_STATUS.CONFIRMADO,
+					});
 				} catch {
 					/* best-effort */
 				}
