@@ -60,6 +60,8 @@ const REAL_DISPONIBILIDADE = [
 	},
 ];
 
+let ultimoPostCliente: Record<string, unknown> | null = null;
+
 const handlers = [
 	http.get(`${BASE}/v1/clientes`, ({ request }) => {
 		const url = new URL(request.url);
@@ -77,19 +79,9 @@ const handlers = [
 	http.get(`${BASE}/v1/clientes/74248732`, () => HttpResponse.json(REAL_CLIENTE)),
 	http.get(`${BASE}/v1/clientes/999`, () => new HttpResponse(null, { status: 404 })),
 	http.post(`${BASE}/v1/clientes`, async ({ request }) => {
-		const body = (await request.json()) as Record<string, unknown>;
-		const telefones = body.telefones as Array<Record<string, unknown>>;
-		return HttpResponse.json(
-			{
-				id: 80000001,
-				dataCadastro: '2026-05-17T10:00:00',
-				email: null,
-				nome: body.nome,
-				telefones: telefones?.map((t) => ({ ddi: t.ddi, ddd: t.ddd, telefone: t.numero })) ?? [],
-				clienteDetalhes: null,
-			},
-			{ status: 201 },
-		);
+		// A Trinks devolve SOMENTE { id } (verificado em produção 27/08/2026).
+		ultimoPostCliente = (await request.json()) as Record<string, unknown>;
+		return HttpResponse.json({ id: 80000001 }, { status: 201 });
 	}),
 
 	http.get(`${BASE}/v1/agendamentos`, () =>
@@ -196,15 +188,19 @@ describe('TrinksClient', () => {
 			await expect(client.getCliente(999)).rejects.toThrow('Trinks');
 		});
 
-		it('createCliente uses telefones array with numero (POST asymmetry)', async () => {
+		it('createCliente envia telefones com `numero` no corpo (assimetria do POST)', async () => {
 			const input = {
 				nome: 'Nova',
 				telefones: [{ ddi: '55', ddd: '71', numero: '988888888', tipoId: 1 }],
 			};
 			trinksCreateClienteInputSchema.parse(input); // validates
+			ultimoPostCliente = null;
+
 			const c = await client.createCliente(input);
+
 			expect(c.id).toBe(80000001);
-			expect(c.telefones?.[0]?.telefone).toBe('988888888'); // response uses `telefone`
+			const enviados = ultimoPostCliente?.telefones as Array<Record<string, unknown>>;
+			expect(enviados?.[0]?.numero).toBe('988888888'); // POST usa `numero`, não `telefone`
 		});
 	});
 
@@ -327,5 +323,49 @@ describe('TrinksClient', () => {
 			);
 			await expect(client.listServicos()).rejects.toThrow('schema validation');
 		});
+	});
+});
+
+// ── Regressão de produção (27/08/2026 20:16) ──
+// A Trinks devolve APENAS {"id": N} no POST /v1/clientes — não o cliente inteiro.
+// O schema exigia `nome`, o Zod rejeitava, e o withRetry retentava um POST NÃO
+// idempotente: 3 clientes criadas (91171794/95/96) e a Helena caiu com
+// "Response schema validation failed for POST /v1/clientes".
+describe('createCliente — resposta real da Trinks é só { id }', () => {
+	const server2 = setupServer();
+	beforeAll(() => {
+		setTestEnv({});
+		server2.listen({ onUnhandledRequest: 'error' });
+	});
+	afterEach(() => server2.resetHandlers());
+	afterAll(() => server2.close());
+
+	const input = {
+		nome: 'Nova Cliente',
+		telefones: [{ ddi: '55', ddd: '71', numero: '988888888', tipoId: 1 }],
+	};
+
+	it('aceita a resposta enxuta { id } sem erro de schema', async () => {
+		server2.use(http.post(`${BASE}/v1/clientes`, () => HttpResponse.json({ id: 91171794 })));
+		const client = new TrinksClient({ baseUrl: BASE, apiKey: 'k', estabelecimentoId: 44992 });
+
+		const c = await client.createCliente(input);
+
+		expect(c.id).toBe(91171794);
+	});
+
+	it('não retenta o POST quando a resposta não casa com o schema (evita cliente duplicada)', async () => {
+		let posts = 0;
+		server2.use(
+			http.post(`${BASE}/v1/clientes`, () => {
+				posts++;
+				return HttpResponse.json({ resposta: 'formato inesperado' });
+			}),
+		);
+		const client = new TrinksClient({ baseUrl: BASE, apiKey: 'k', estabelecimentoId: 44992 });
+
+		await expect(client.createCliente(input)).rejects.toThrow();
+
+		expect(posts).toBe(1);
 	});
 });

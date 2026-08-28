@@ -25,6 +25,15 @@ export class UazapiError extends AppError {
 	}
 }
 
+/**
+ * A resposta da API veio num formato que não casa com o schema.
+ *
+ * ⚠️ NUNCA retentar: o problema é o CONTRATO, não a rede. Retentar um POST por
+ * causa disso cria registro duplicado — foi o que aconteceu em 27/08/2026, quando
+ * o POST /v1/clientes (que devolve só `{id}`) foi retentado 2x e criou 3 clientes.
+ */
+export class TrinksSchemaError extends TrinksError {}
+
 export class ValidationError extends AppError {
 	constructor(message: string, details?: unknown) {
 		super(message, 400, details);

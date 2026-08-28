@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getEnv } from '../infra/env.js';
-import { TrinksError } from '../infra/errors.js';
+import { TrinksError, TrinksSchemaError } from '../infra/errors.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
 import { isRetryableStatus, withRetry } from '../infra/retry.js';
@@ -249,7 +249,7 @@ export class TrinksClient {
 					{ path, zodErrors: parsed.error.flatten(), rawResponse: json },
 					'Trinks response schema mismatch',
 				);
-				throw new TrinksError(
+				throw new TrinksSchemaError(
 					`Response schema validation failed for ${method} ${path}`,
 					502,
 					parsed.error.flatten(),
@@ -261,7 +261,10 @@ export class TrinksClient {
 		return withRetry(doRequest, {
 			maxRetries: 2,
 			baseDelayMs: 500,
-			shouldRetry: (err) => err instanceof TrinksError && isRetryableStatus(err.statusCode),
+			shouldRetry: (err) =>
+				err instanceof TrinksError &&
+				!(err instanceof TrinksSchemaError) &&
+				isRetryableStatus(err.statusCode),
 			logger: this.log,
 			label: `trinks:${method} ${path}`,
 		});
@@ -297,7 +300,10 @@ export class TrinksClient {
 		return withRetry(doRequest, {
 			maxRetries: 2,
 			baseDelayMs: 500,
-			shouldRetry: (err) => err instanceof TrinksError && isRetryableStatus(err.statusCode),
+			shouldRetry: (err) =>
+				err instanceof TrinksError &&
+				!(err instanceof TrinksSchemaError) &&
+				isRetryableStatus(err.statusCode),
 			logger: this.log,
 			label: `trinks:${method} ${path}`,
 		});
@@ -353,9 +359,13 @@ export class TrinksClient {
 		return this.typedRequest('GET', `/v1/clientes/${id}`, trinksClienteSchema);
 	}
 
-	async createCliente(input: TrinksCreateClienteInput) {
+	async createCliente(input: TrinksCreateClienteInput): Promise<{ id: number }> {
 		trinksCreateClienteInputSchema.parse(input);
-		return this.typedRequest('POST', '/v1/clientes', trinksClienteSchema, input);
+		// Igual ao POST /agendamentos: a Trinks devolve SOMENTE { id }, não o
+		// cliente inteiro. Exigir `nome` aqui derrubava a Helena e — pior — fazia
+		// o retry criar cliente duplicada (produção 27/08/2026).
+		// Precisa do cadastro completo? Chame getCliente(id) depois.
+		return this.typedRequest('POST', '/v1/clientes', z.object({ id: z.number() }), input);
 	}
 
 	async updateCliente(id: number, input: Partial<TrinksCreateClienteInput>) {
