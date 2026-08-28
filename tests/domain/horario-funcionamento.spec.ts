@@ -84,9 +84,9 @@ describe('filterByTurno', () => {
 		expect(r).toEqual(['08:00', '09:00', '10:00', '11:00']);
 	});
 
-	it('tarde filters 13:30-18:30 (inclui 17:30 e 18:00)', () => {
+	it('tarde filters 12:00-18:30 (do meio-dia às 18h)', () => {
 		const r = filterByTurno(slots, 'tarde');
-		expect(r).toEqual(['13:30', '14:00', '15:00', '17:30', '18:00']);
+		expect(r).toEqual(['12:00', '13:00', '13:30', '14:00', '15:00', '17:30', '18:00']);
 	});
 
 	it('noite filters 18:00-20:00', () => {
@@ -101,5 +101,40 @@ describe('filterByTurno', () => {
 		expect(r).toContain('13:00');
 		expect(r).toContain('08:00');
 		expect(r).toContain('14:00');
+	});
+});
+
+// Regressão 28/08/2026: os turnos tinham um buraco entre 12:00 e 13:30 — resto
+// de um "almoço" que já havia sido removido do resto do código. Efeito: quem
+// pedia "de tarde" nunca recebia 13:00, o 2º horário mais cheio da Camila
+// (15 atendimentos em jul+ago). 12:00/12:30/13:00 não pertenciam a turno nenhum.
+//
+// Disponibilidade real NÃO se decide aqui — quem decide é o horariosVagos da
+// Trinks. Este mapa só traduz a palavra da cliente ("tarde") em faixa de hora,
+// e por isso não pode deixar hora órfã.
+describe('filterByTurno: cobertura sem buracos', () => {
+	const doDia = (() => {
+		const hs: string[] = [];
+		for (let h = 8; h < 20; h++)
+			for (const m of ['00', '30']) hs.push(`${String(h).padStart(2, '0')}:${m}`);
+		return hs;
+	})();
+
+	it('todo horário do expediente cai em pelo menos um turno', () => {
+		const cobertos = new Set([
+			...filterByTurno(doDia, 'manha'),
+			...filterByTurno(doDia, 'tarde'),
+			...filterByTurno(doDia, 'noite'),
+		]);
+		const orfaos = doDia.filter((h) => !cobertos.has(h));
+		expect(orfaos).toEqual([]);
+	});
+
+	it('"tarde" inclui 13:00 (2º horário mais cheio da Camila)', () => {
+		expect(filterByTurno(['11:00', '12:00', '13:00', '15:00'], 'tarde')).toContain('13:00');
+	});
+
+	it('"tarde" inclui meio-dia', () => {
+		expect(filterByTurno(['09:00', '12:00', '12:30'], 'tarde')).toEqual(['12:00', '12:30']);
 	});
 });

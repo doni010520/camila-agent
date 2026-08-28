@@ -71,9 +71,16 @@ export function filterByTurno(
 		// a continuidade pra serviços de 2h → Helena dizia "sem vaga" tendo vaga.
 		return horarios;
 	}
+	// Isto NÃO decide disponibilidade — quem decide é o horariosVagos da Trinks.
+	// É só a tradução da palavra da cliente ("tarde") em faixa de hora. Por isso
+	// não pode deixar hora órfã: até 28/08/2026 a tarde começava 13:30 e o
+	// intervalo 12:00–13:30 não caía em turno nenhum (resto de um "almoço" já
+	// removido do resto do código). Quem pedia "de tarde" nunca recebia 13:00 —
+	// o 2º horário mais cheio da agenda. Turnos vizinhos se sobrepõem de
+	// propósito: na dúvida, oferecer a mais.
 	const ranges: Record<string, { start: string; end: string }> = {
 		manha: { start: '08:00', end: '12:00' },
-		tarde: { start: '13:30', end: '18:30' }, // inclui 17:30, 18:00
+		tarde: { start: '12:00', end: '18:30' }, // meio-dia é tarde, e inclui 17:30/18:00
 		noite: { start: '18:00', end: '20:00' }, // inclui 18:00, 18:30, 19:00, 19:30
 	};
 	const range = ranges[turno];
