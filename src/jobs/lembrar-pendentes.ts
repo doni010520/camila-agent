@@ -70,12 +70,18 @@ export async function runLembrarPendentes(
 
 	// Candidato = da Camila, já terminou, e continua num status ATIVO — ou seja,
 	// ela não disse nem que finalizou nem que a cliente faltou.
-	const candidatos = (lista.data ?? []).filter((a) => {
-		if (a.profissional.id !== deps.profissionalId) return false;
-		if (!ACTIVE_STATUSES.has(a.status.id)) return false;
-		const fim = trinksWallClockToEpochMin(a.dataHoraInicio) + (a.duracaoEmMinutos ?? 60);
-		return fim <= agoraMin;
-	});
+	const candidatos = (lista.data ?? [])
+		.filter((a) => {
+			if (a.profissional.id !== deps.profissionalId) return false;
+			if (!ACTIVE_STATUSES.has(a.status.id)) return false;
+			const fim = trinksWallClockToEpochMin(a.dataHoraInicio) + (a.duracaoEmMinutos ?? 60);
+			return fim <= agoraMin;
+		})
+		// Mais recente primeiro. A Trinks devolve em ordem crescente e o teto por
+		// execução é baixo: sem ordenar, as vagas iam para pendência de 5 dias
+		// atrás e a de hoje nunca era cobrada — justo a que ela ainda lembra e a
+		// que dá tempo de virar manutenção dentro do prazo.
+		.sort((a, b) => b.dataHoraInicio.localeCompare(a.dataHoraInicio));
 
 	let lembrados = 0;
 	let erros = 0;

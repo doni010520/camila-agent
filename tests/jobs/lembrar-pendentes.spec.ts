@@ -169,6 +169,44 @@ describe('runLembrarPendentes', () => {
 		expect(deps.menus).toHaveLength(3);
 	});
 
+	it('cobra primeiro o atendimento mais recente, não o mais antigo', async () => {
+		// A Trinks devolve em ordem crescente. Sem ordenar, o teto de 3 gastaria
+		// as vagas com pendência de 5 dias atrás e a de hoje nunca seria cobrada —
+		// justamente a que ela lembra e a que ainda dá tempo de virar manutenção.
+		const deps = makeDeps({
+			agendamentos: [
+				makeAg({
+					id: 901,
+					cliente: { id: 1, nome: 'Antiga' },
+					dataHoraInicio: '2026-08-28T10:00:00',
+				}),
+				makeAg({
+					id: 902,
+					cliente: { id: 2, nome: 'Meio' },
+					dataHoraInicio: '2026-08-30T10:00:00',
+				}),
+				makeAg({
+					id: 903,
+					cliente: { id: 3, nome: 'Hoje' },
+					dataHoraInicio: '2026-09-01T10:00:00',
+				}),
+				makeAg({
+					id: 904,
+					cliente: { id: 4, nome: 'Ontem' },
+					dataHoraInicio: '2026-08-31T10:00:00',
+				}),
+			],
+		});
+
+		await runLembrarPendentes(deps as never);
+
+		expect(deps.menus.map((m) => m.text.match(/\*(\w+)\*/)?.[1])).toEqual([
+			'Hoje',
+			'Ontem',
+			'Meio',
+		]);
+	});
+
 	it('ignora agendamento de outra profissional', async () => {
 		const deps = makeDeps({
 			agendamentos: [makeAg({ profissional: { id: 171151, nome: 'Agenda Camacari' } })],
