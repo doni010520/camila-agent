@@ -163,7 +163,10 @@ describe('handleButton', () => {
 // Causa: a Trinks grava status 8 ("Finalizado"), mas o código verificava contra 6.
 // A verificação falhava sempre e o fluxo dava return antes de ofertar a manutenção.
 describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
-	function makeFinalizarDeps() {
+	function makeFinalizarDeps(
+		vagos: string[] = ['14:00', '14:30', '15:00', '15:30'],
+		vagosEm?: string,
+	) {
 		const base = makeDeps();
 		const agendamento = {
 			id: 521608805,
@@ -187,6 +190,17 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 					nome: 'Maria Silva',
 					telefones: [{ ddi: '55', ddd: '71', telefone: '999999999' }],
 				}),
+				// agenda de +15d: por padrao o mesmo horario (14:00) esta livre
+				listProfissionaisComAgenda: vi.fn().mockImplementation(async (data: string) => ({
+					data: [
+						{
+							id: 170223,
+							nome: 'Camila',
+							horariosVagos: data === (vagosEm ?? '2026-09-11') ? vagos : [],
+							intervalosVagos: [],
+						},
+					],
+				})),
 			},
 			uazapi: {
 				...base.uazapi,
@@ -263,5 +277,24 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 		const avisos = deps.sentTexts.join(' | ');
 		expect(avisos).not.toContain('não confirmou no Trinks');
 		expect(avisos).toContain('finalizada');
+	});
+
+	it('propõe o horário mais próximo quando o de sempre está ocupado', async () => {
+		// 14:00 ocupado; sobra bloco de 2h a partir das 09:00
+		const deps = makeFinalizarDeps(['09:00', '09:30', '10:00', '10:30']);
+		const lm = fakeLeadManager();
+		await handleButton(paramsCom(deps, lm.manager));
+
+		expect(lm.salvo.proxima_manutencao_data).toBe('2026-09-11T09:00:00');
+		expect(deps.sentMenus[0]?.text).toContain('11/09 às 9h');
+	});
+
+	it('avisa a Camila em vez de propor data inventada quando não há vaga', async () => {
+		const deps = makeFinalizarDeps([]); // agenda cheia em toda a janela
+		const lm = fakeLeadManager();
+		await handleButton(paramsCom(deps, lm.manager));
+
+		expect(deps.sentMenus).toHaveLength(0);
+		expect(deps.sentTexts.join(' | ')).toContain('Não achei horário livre');
 	});
 });

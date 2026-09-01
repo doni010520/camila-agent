@@ -7,9 +7,10 @@ import type { UazapiClient } from '../clients/uazapi.js';
 import { parseButtonId } from '../clients/uazapi.js';
 import type { LeadManager } from '../domain/lead.js';
 import {
-	calcularProximaManutencao,
+	escolherHorarioManutencao,
 	formatarDataManutencao,
 	getManutencaoServiceName,
+	intervaloManutencaoDias,
 } from '../domain/manutencao.js';
 import { TRINKS_STATUS } from '../domain/trinks-status.js';
 
@@ -237,14 +238,39 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 					.catch(() => {});
 				return;
 			}
-			const novaDataHora = calcularProximaManutencao(ag.dataHoraInicio, 15);
+			// Procura um horário que EXISTE antes de propor. Antes a proposta saía
+			// às cegas (+15d, mesmo horário) e a cliente só descobria que estava
+			// ocupado depois de clicar "confirmo" — o atrito que a Camila pediu pra tirar.
+			const intervalo = intervaloManutencaoDias(servicoManutencao);
+			const escolha = await escolherHorarioManutencao({
+				dataHoraOriginal: ag.dataHoraInicio,
+				duracaoMin: ag.duracaoEmMinutos ?? 60,
+				intervaloDias: intervalo,
+				vagosDoDia: async (data) => {
+					const agenda = await deps.trinks.listProfissionaisComAgenda(data);
+					return agenda.data.find((p) => p.id === ag.profissional.id)?.horariosVagos ?? [];
+				},
+			});
+
+			if (!escolha) {
+				log.warn({ agId, servicoManutencao, intervalo }, 'Sem horário livre pra manutenção');
+				await deps.uazapi
+					.sendText(
+						telefone,
+						`✅ ${ag.cliente.nome} finalizada. Não achei horário livre pra manutenção dela nos próximos dias — melhor você falar com ela.`,
+					)
+					.catch(() => {});
+				return;
+			}
+
+			const novaDataHora = escolha.dataHora;
 			const novaDataLegivel = formatarDataManutencao(novaDataHora);
 
 			// 4. Manda menu pra cliente
 			try {
 				await deps.uazapi.sendMenu({
 					number: numeroCliente,
-					text: `Oi ${ag.cliente.nome.split(' ')[0]}! 💖 Espero que tenha amado o resultado de hoje.\n\nJá deixei aqui pré-agendada sua próxima *manutenção* pra *${novaDataLegivel}* (mesmo horário de hoje). Pode confirmar?`,
+					text: `${ag.cliente.nome.trim().split(/\s+/)[0]}, sua manutenção ficou para *${novaDataLegivel}*. Confirma? 💖`,
 					choices: [
 						{ label: 'Sim, confirmo ✅', id: `Manut_sim${agId}` },
 						{ label: 'Quero outra data', id: `Manut_nao${agId}` },
