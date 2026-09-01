@@ -110,22 +110,25 @@ export class PostgresClient {
 				('lembrete',       true, ARRAY['0 9 * * *','0 13 * * *','0 18 * * *'], 'Lembrete pra confirmar agendamento de amanhã (3x ao dia, igual n8n velho)'),
 				('enquete',        true, ARRAY['0 20 * * *'],                          'Enquete pós-atendimento (final do dia)'),
 				('sync_clientes',  true, ARRAY['0 4 * * 0'],                           'Sincroniza clientes da Trinks pro Postgres (domingo madrugada)'),
-				('detectar_conflitos', true, ARRAY['0 8 * * *','0 12 * * *','0 19 * * *'], 'Detecta agendamentos sobrepostos (qualquer origem) e alerta a Camila')
+				('detectar_conflitos', true, ARRAY['0 8 * * *','0 12 * * *','0 19 * * *'], 'Detecta agendamentos sobrepostos (qualquer origem) e alerta a Camila'),
+				('lembrar_pendentes', true, ARRAY['0 8 * * *','0 20 * * *'],           'Cutuca a Camila sobre botoes de "finalizou?" sem resposta (max 3 por vez, 3 tentativas por atendimento)')
 			ON CONFLICT (job_name) DO NOTHING;
 		`);
 	}
 
 	// ── Cron jobs config ──
 
-	async listCronJobs(): Promise<Array<{
-		job_name: string;
-		enabled: boolean;
-		cron_expressions: string[];
-		descricao: string | null;
-		ultima_execucao_em: string | null;
-		ultima_execucao_resultado: unknown;
-		atualizado_em: string;
-	}>> {
+	async listCronJobs(): Promise<
+		Array<{
+			job_name: string;
+			enabled: boolean;
+			cron_expressions: string[];
+			descricao: string | null;
+			ultima_execucao_em: string | null;
+			ultima_execucao_resultado: unknown;
+			atualizado_em: string;
+		}>
+	> {
 		return this.query(
 			`SELECT job_name, enabled, cron_expressions, descricao,
 			        ultima_execucao_em::text AS ultima_execucao_em,
@@ -135,20 +138,29 @@ export class PostgresClient {
 		);
 	}
 
-	async updateCronJob(jobName: string, patch: { enabled?: boolean; cron_expressions?: string[]; descricao?: string }): Promise<void> {
+	async updateCronJob(
+		jobName: string,
+		patch: { enabled?: boolean; cron_expressions?: string[]; descricao?: string },
+	): Promise<void> {
 		const sets: string[] = [];
 		const params: unknown[] = [];
 		let i = 1;
-		if (patch.enabled !== undefined) { sets.push(`enabled = $${i++}`); params.push(patch.enabled); }
-		if (patch.cron_expressions !== undefined) { sets.push(`cron_expressions = $${i++}`); params.push(patch.cron_expressions); }
-		if (patch.descricao !== undefined) { sets.push(`descricao = $${i++}`); params.push(patch.descricao); }
+		if (patch.enabled !== undefined) {
+			sets.push(`enabled = $${i++}`);
+			params.push(patch.enabled);
+		}
+		if (patch.cron_expressions !== undefined) {
+			sets.push(`cron_expressions = $${i++}`);
+			params.push(patch.cron_expressions);
+		}
+		if (patch.descricao !== undefined) {
+			sets.push(`descricao = $${i++}`);
+			params.push(patch.descricao);
+		}
 		if (sets.length === 0) return;
 		sets.push(`atualizado_em = NOW()`);
 		params.push(jobName);
-		await this.pool.query(
-			`UPDATE cron_jobs SET ${sets.join(', ')} WHERE job_name = $${i}`,
-			params,
-		);
+		await this.pool.query(`UPDATE cron_jobs SET ${sets.join(', ')} WHERE job_name = $${i}`, params);
 	}
 
 	async marcarExecucaoCron(jobName: string, resultado: unknown): Promise<void> {
@@ -160,21 +172,31 @@ export class PostgresClient {
 
 	private roleToLangchainType(role: string): string {
 		switch (role) {
-			case 'user': return 'human';
-			case 'assistant': return 'ai';
-			case 'tool': return 'tool';
-			case 'system': return 'system';
-			default: return role;
+			case 'user':
+				return 'human';
+			case 'assistant':
+				return 'ai';
+			case 'tool':
+				return 'tool';
+			case 'system':
+				return 'system';
+			default:
+				return role;
 		}
 	}
 
 	private langchainTypeToRole(type: string): 'user' | 'assistant' | 'tool' | 'system' {
 		switch (type) {
-			case 'human': return 'user';
-			case 'ai': return 'assistant';
-			case 'tool': return 'tool';
-			case 'system': return 'system';
-			default: return 'user';
+			case 'human':
+				return 'user';
+			case 'ai':
+				return 'assistant';
+			case 'tool':
+				return 'tool';
+			case 'system':
+				return 'system';
+			default:
+				return 'user';
 		}
 	}
 
@@ -190,10 +212,10 @@ export class PostgresClient {
 			additional_kwargs: metadata ?? {},
 			response_metadata: {},
 		};
-		await this.pool.query(
-			'INSERT INTO n8n_chat_histories (session_id, message) VALUES ($1, $2)',
-			[sessionId, JSON.stringify(message)],
-		);
+		await this.pool.query('INSERT INTO n8n_chat_histories (session_id, message) VALUES ($1, $2)', [
+			sessionId,
+			JSON.stringify(message),
+		]);
 	}
 
 	/** Lista quantas mensagens cada sessão (telefone) já trocou com Helena.
@@ -212,7 +234,9 @@ export class PostgresClient {
 
 	/** Lista sessões onde a última mensagem é do usuário (sem resposta da Helena).
 	 *  Útil pra investigar relatos do tipo "Helena não respondeu". */
-	async listSessionsSemResposta(): Promise<Array<{ session_id: string; ultima_id: number; ultima_msg: string }>> {
+	async listSessionsSemResposta(): Promise<
+		Array<{ session_id: string; ultima_id: number; ultima_msg: string }>
+	> {
 		return this.query<{ session_id: string; ultima_id: number; ultima_msg: string }>(
 			`WITH ult AS (
 			   SELECT DISTINCT ON (session_id)
@@ -266,7 +290,11 @@ export class PostgresClient {
 		}
 	}
 
-	async listWebhookInbound(opts: { telefone?: string; limit?: number; includePayload?: boolean }): Promise<
+	async listWebhookInbound(opts: {
+		telefone?: string;
+		limit?: number;
+		includePayload?: boolean;
+	}): Promise<
 		Array<{
 			id: number;
 			recebido_em: string;
@@ -302,10 +330,9 @@ export class PostgresClient {
 	}
 
 	async clearChatMemory(sessionId: string): Promise<number> {
-		const result = await this.pool.query(
-			'DELETE FROM n8n_chat_histories WHERE session_id = $1',
-			[sessionId],
-		);
+		const result = await this.pool.query('DELETE FROM n8n_chat_histories WHERE session_id = $1', [
+			sessionId,
+		]);
 		return result.rowCount ?? 0;
 	}
 
@@ -325,7 +352,12 @@ export class PostgresClient {
 			roleFilter = `AND message->>'type' = $${params.length}`;
 		}
 		params.push(opts?.limit ?? 200);
-		const rows = await this.query<{ session_id: string; id: number; type: string; content: string }>(
+		const rows = await this.query<{
+			session_id: string;
+			id: number;
+			type: string;
+			content: string;
+		}>(
 			`SELECT session_id, id,
 			        message->>'type' AS type,
 			        message->>'content' AS content
@@ -344,7 +376,11 @@ export class PostgresClient {
 	}
 
 	async loadRecentMessages(sessionId: string, limit = 30): Promise<ChatMemoryRow[]> {
-		const rows = await this.query<{ id: number; session_id: string; message: Record<string, unknown> }>(
+		const rows = await this.query<{
+			id: number;
+			session_id: string;
+			message: Record<string, unknown>;
+		}>(
 			`SELECT id, session_id, message
 			 FROM n8n_chat_histories
 			 WHERE session_id = $1

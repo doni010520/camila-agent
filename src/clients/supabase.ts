@@ -109,6 +109,8 @@ export const agendamentoRowSchema = z.object({
 	ultimo_servico: z.string().nullable().optional(),
 	lembrete_enviado_em: z.string().nullable().optional(),
 	enquete_finalizacao_enviada_em: z.string().nullable().optional(),
+	enquete_lembrado_em: z.string().nullable().optional(),
+	enquete_lembretes: z.number().nullable().optional(),
 	created_at: z.string().nullable().optional(),
 	updated_at: z.string().nullable().optional(),
 });
@@ -139,7 +141,7 @@ export const leadCamilaRowSchema = z.object({
 	metadata: z.record(z.unknown()).default({}),
 
 	// Legacy columns from Levesol/n8n velho (kept for backward compat)
-	ia_on_off: z.string().nullable().optional(),  // 'on' | 'off' (text, NOT boolean!)
+	ia_on_off: z.string().nullable().optional(), // 'on' | 'off' (text, NOT boolean!)
 	pdf_enviado_nesta_conversa: z.boolean().nullable().optional(),
 	status_funil_vendas: z.string().nullable().optional(),
 });
@@ -147,8 +149,8 @@ export const leadCamilaRowSchema = z.object({
 export const servicoRowSchema = z.object({
 	id: z.number(),
 	nome: z.string(),
-	duracao_minutos: z.number(),  // real column name in Supabase (NOT duracao_em_minutos)
-	preco: z.coerce.number().nullable().optional(),  // stored as numeric, may come as string
+	duracao_minutos: z.number(), // real column name in Supabase (NOT duracao_em_minutos)
+	preco: z.coerce.number().nullable().optional(), // stored as numeric, may come as string
 	categoria: z.string().nullable().optional(),
 	descricao: z.string().nullable().optional(),
 	visivel_cliente: z.boolean().nullable().optional(),
@@ -226,6 +228,16 @@ export class AppSupabaseClient {
 			.update({ lembrete_enviado_em: new Date().toISOString() })
 			.eq('id', id);
 		if (error) throw new Error(`Supabase mark lembrete: ${error.message}`);
+	}
+
+	/** Registra que cutucamos a Camila sobre esse atendimento (job
+	 *  lembrar-pendentes). `lembretes` é o novo total acumulado. */
+	async markEnqueteLembrada(id: number, lembretes: number): Promise<void> {
+		const { error } = await this.client
+			.from('agendamentos')
+			.update({ enquete_lembrado_em: new Date().toISOString(), enquete_lembretes: lembretes })
+			.eq('id', id);
+		if (error) throw new Error(`Supabase mark enquete lembrada: ${error.message}`);
 	}
 
 	async markEnqueteEnviada(id: number): Promise<void> {

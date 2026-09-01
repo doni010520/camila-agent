@@ -7,6 +7,7 @@ import { getEnv } from '../infra/env.js';
 import { rootLogger } from '../infra/logger.js';
 import { runDetectarConflitos } from '../jobs/detectar-conflitos.js';
 import { runEnqueteFinalizacao } from '../jobs/enquete-finalizacao.js';
+import { runLembrarPendentes } from '../jobs/lembrar-pendentes.js';
 import { runLembreteAmanha } from '../jobs/lembrete-amanha.js';
 import { runRelatorioDiario } from '../jobs/relatorio-diario.js';
 import { runRelatorioErros } from '../jobs/relatorio-erros.js';
@@ -65,6 +66,23 @@ export function createCronRouter(deps: CronDeps): Hono {
 			return c.json({ status: 'ok', ...result });
 		} catch (err) {
 			log.error({ err }, 'Cron enquete failed');
+			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
+		}
+	});
+
+	router.post('/cron/lembrar-pendentes', async (c) => {
+		const log = rootLogger.child({ job: 'cron-lembrar-pendentes' });
+		try {
+			const result = await runLembrarPendentes({
+				trinks: deps.trinks,
+				supabase: deps.supabase,
+				uazapi: deps.uazapi,
+				profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+				logger: log,
+			});
+			return c.json({ status: 'ok', ...result });
+		} catch (err) {
+			log.error({ err }, 'Cron lembrar-pendentes failed');
 			return c.json({ status: 'erro', razao: err instanceof Error ? err.message : 'unknown' }, 500);
 		}
 	});

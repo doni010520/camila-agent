@@ -16,3 +16,10 @@ ALTER TABLE agendamentos
   ADD COLUMN IF NOT EXISTS enquete_finalizacao_enviada_em timestamptz,
   ADD COLUMN IF NOT EXISTS ultimo_agendamento timestamptz,
   ADD COLUMN IF NOT EXISTS ultimo_servico text;
+
+-- 01/09/2026 — job lembrar-pendentes: cutuca os botões de "finalizou?" que a
+-- Camila não respondeu. Precisa saber quantas vezes já insistimos e quando foi
+-- a última, senão vira loop infinito de cutucada.
+ALTER TABLE agendamentos
+  ADD COLUMN IF NOT EXISTS enquete_lembrado_em timestamptz,
+  ADD COLUMN IF NOT EXISTS enquete_lembretes integer NOT NULL DEFAULT 0;

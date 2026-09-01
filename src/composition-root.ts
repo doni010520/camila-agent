@@ -25,10 +25,11 @@ import { rootLogger } from './infra/logger.js';
 import { Scheduler } from './infra/scheduler.js';
 import { runDetectarConflitos } from './jobs/detectar-conflitos.js';
 import { runEnqueteFinalizacao } from './jobs/enquete-finalizacao.js';
+import { runLembrarPendentes } from './jobs/lembrar-pendentes.js';
 import { runLembreteAmanha } from './jobs/lembrete-amanha.js';
 import { runSyncClientes } from './jobs/sync-clientes.js';
+import { CLIENTE_HTML, DASHBOARD_HTML, createAdminRouter } from './routes/admin.js';
 import { createCronRouter } from './routes/cron.js';
-import { createAdminRouter, DASHBOARD_HTML, CLIENTE_HTML } from './routes/admin.js';
 import { healthRouter } from './routes/health.js';
 import { logsRouter } from './routes/logs.js';
 import { createWebhookMessageRouter } from './routes/webhook-message.js';
@@ -91,7 +92,7 @@ export async function bootApp(): Promise<BootResult> {
 
 	// Dashboards registrados antes do admin router (fora do middleware de auth)
 	app.get('/admin/dashboard', (c) => c.html(DASHBOARD_HTML)); // dev, dark theme
-	app.get('/admin/cliente', (c) => c.html(CLIENTE_HTML));      // Camila, rose gold
+	app.get('/admin/cliente', (c) => c.html(CLIENTE_HTML)); // Camila, rose gold
 
 	app.route('/', createAdminRouter({ postgres, supabase, trinks, uazapi, openai }));
 
@@ -121,6 +122,14 @@ export async function bootApp(): Promise<BootResult> {
 	);
 	scheduler.register('enquete', () =>
 		runEnqueteFinalizacao({
+			trinks,
+			supabase,
+			uazapi,
+			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+		}),
+	);
+	scheduler.register('lembrar_pendentes', () =>
+		runLembrarPendentes({
 			trinks,
 			supabase,
 			uazapi,
