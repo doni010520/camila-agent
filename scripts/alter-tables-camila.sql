@@ -23,3 +23,7 @@ ALTER TABLE agendamentos
 ALTER TABLE agendamentos
   ADD COLUMN IF NOT EXISTS enquete_lembrado_em timestamptz,
   ADD COLUMN IF NOT EXISTS enquete_lembretes integer NOT NULL DEFAULT 0;
+
+-- 02/09/2026 — job feedback-pos-atendimento (item 05 da Camila): pergunta à
+-- cliente 3 dias depois como ficou o resultado. Precisa saber se já perguntou.
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS feedback_enviado_em timestamptz;

@@ -73,6 +73,8 @@ export function isButtonClick(msg: z.infer<typeof uazapiMessageSchema>): boolean
  * "Fin_nao495316019"     → { action: 'finalizar_nao',    agendamentoId: '495316019' }
  * "Manut_sim495316019"   → { action: 'manutencao_sim',   agendamentoId: '495316019' } (cliente confirma manutenção)
  * "Manut_nao495316019"   → { action: 'manutencao_nao',   agendamentoId: '495316019' }
+ * "Fb_bom495316019"      → { action: 'feedback_bom',     agendamentoId: '495316019' } (feedback 3 dias depois)
+ * "Fb_ruim495316019"     → { action: 'feedback_ruim',    agendamentoId: '495316019' }
  */
 export function parseButtonId(buttonOrListid: string): { action: string; agendamentoId: string } {
 	const idStr = buttonOrListid.replace(/[^a-zA-Z_]/g, '');
@@ -86,6 +88,8 @@ export function parseButtonId(buttonOrListid: string): { action: string; agendam
 	if (idStr === 'Fin_nao') return { action: 'finalizar_nao', agendamentoId: numStr };
 	if (idStr === 'Manut_sim') return { action: 'manutencao_sim', agendamentoId: numStr };
 	if (idStr === 'Manut_nao') return { action: 'manutencao_nao', agendamentoId: numStr };
+	if (idStr === 'Fb_bom') return { action: 'feedback_bom', agendamentoId: numStr };
+	if (idStr === 'Fb_ruim') return { action: 'feedback_ruim', agendamentoId: numStr };
 	return { action: 'unknown', agendamentoId: numStr };
 }
 
@@ -269,7 +273,10 @@ export class UazapiClient {
 
 		if (!res.ok) {
 			const text = await res.text().catch(() => '');
-			this.log.error({ path: '/message/download', status: res.status, body: text.slice(0, 200) }, 'UAZAPI download failed');
+			this.log.error(
+				{ path: '/message/download', status: res.status, body: text.slice(0, 200) },
+				'UAZAPI download failed',
+			);
 			return null;
 		}
 
@@ -283,7 +290,10 @@ export class UazapiClient {
 	async getMediaUrl(messageId: string): Promise<string | null> {
 		const result = await this.downloadMedia({ messageId, returnLink: true, returnBase64: false });
 		if (result?.fileURL && typeof result.fileURL === 'string') return result.fileURL;
-		this.log.warn({ messageId, resultKeys: result ? Object.keys(result) : [] }, 'getMediaUrl: no fileURL in response');
+		this.log.warn(
+			{ messageId, resultKeys: result ? Object.keys(result) : [] },
+			'getMediaUrl: no fileURL in response',
+		);
 		return null;
 	}
 
@@ -295,19 +305,27 @@ export class UazapiClient {
 		// 1. Tenta via URL (mais eficiente)
 		const result = await this.downloadMedia({ messageId, returnLink: true, returnBase64: false });
 		const fileURL = typeof result?.fileURL === 'string' ? result.fileURL : null;
-		const mimetype = typeof result?.mimetype === 'string' ? result.mimetype : 'application/octet-stream';
+		const mimetype =
+			typeof result?.mimetype === 'string' ? result.mimetype : 'application/octet-stream';
 
 		if (fileURL) {
 			const res = await fetch(fileURL);
 			if (res.ok) {
-				this.log.debug({ messageId, mimetype, size: 'streaming' }, 'Media fetched via UAZAPI fileURL');
+				this.log.debug(
+					{ messageId, mimetype, size: 'streaming' },
+					'Media fetched via UAZAPI fileURL',
+				);
 				return { bytes: new Uint8Array(await res.arrayBuffer()), mimetype };
 			}
 			this.log.warn({ messageId, status: res.status }, 'fileURL fetch failed, trying base64');
 		}
 
 		// 2. Fallback: base64 direto
-		const b64result = await this.downloadMedia({ messageId, returnBase64: true, returnLink: false });
+		const b64result = await this.downloadMedia({
+			messageId,
+			returnBase64: true,
+			returnLink: false,
+		});
 		const base64Data = typeof b64result?.base64Data === 'string' ? b64result.base64Data : null;
 		const mime2 = typeof b64result?.mimetype === 'string' ? b64result.mimetype : mimetype;
 

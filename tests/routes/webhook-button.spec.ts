@@ -298,3 +298,78 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 		expect(deps.sentTexts.join(' | ')).toContain('Não achei horário livre');
 	});
 });
+
+// Item 05 do pedido da Camila: feedback 3 dias depois.
+// "se for negativo ela manda a msg eu entro em contato para entender a queixa"
+describe('feedback pós-atendimento (Fb_bom / Fb_ruim)', () => {
+	function makeFbDeps() {
+		const enviados: Array<{ number: string; text: string }> = [];
+		return {
+			trinks: {
+				getAgendamento: vi.fn().mockResolvedValue({
+					id: 700,
+					status: { id: 8, nome: 'Finalizado' },
+					cliente: { id: 100, nome: 'Maria Silva' },
+					servico: { id: 10, nome: 'Volume Russo' },
+					profissional: { id: 170223, nome: 'Camila' },
+					dataHoraInicio: '2026-09-02T14:00:00',
+					duracaoEmMinutos: 120,
+				}),
+			},
+			uazapi: {
+				sendText: vi.fn().mockImplementation(async (number: string, text: string) => {
+					enviados.push({ number, text });
+				}),
+			},
+			supabase: { upsertAgendamento: vi.fn() },
+			openai: {},
+			postgres: {},
+			toolRegistry: {},
+			enviados,
+		};
+	}
+
+	function fbParams(botao: string, deps: unknown) {
+		return {
+			telefone: '5571999999999',
+			buttonOrListid: botao,
+			deps: deps as never,
+			leadManager: {} as never,
+		};
+	}
+
+	it('resposta boa: agradece a cliente e pede a avaliação', async () => {
+		const deps = makeFbDeps();
+		await handleButton(fbParams('Fb_bom700', deps));
+
+		const praCliente = deps.enviados.find((e) => e.number === '5571999999999');
+		expect(praCliente?.text.toLowerCase()).toContain('avalia');
+	});
+
+	it('resposta boa: avisa a Camila que tem prova social pra colher', async () => {
+		const deps = makeFbDeps();
+		await handleButton(fbParams('Fb_bom700', deps));
+
+		const praCamila = deps.enviados.find((e) => e.number !== '5571999999999');
+		expect(praCamila?.text).toContain('Maria Silva');
+	});
+
+	it('resposta ruim: NÃO tenta resolver sozinha, acolhe e passa pra Camila', async () => {
+		const deps = makeFbDeps();
+		await handleButton(fbParams('Fb_ruim700', deps));
+
+		const praCliente = deps.enviados.find((e) => e.number === '5571999999999');
+		const praCamila = deps.enviados.find((e) => e.number !== '5571999999999');
+		expect(praCliente?.text.toLowerCase()).toContain('camila');
+		expect(praCamila?.text).toContain('Maria Silva');
+		expect(praCamila?.text).toContain('Volume Russo');
+	});
+
+	it('resposta ruim: não pede avaliação de quem não gostou', async () => {
+		const deps = makeFbDeps();
+		await handleButton(fbParams('Fb_ruim700', deps));
+
+		const praCliente = deps.enviados.find((e) => e.number === '5571999999999');
+		expect(praCliente?.text.toLowerCase()).not.toContain('avalia');
+	});
+});

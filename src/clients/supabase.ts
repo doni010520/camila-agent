@@ -111,6 +111,7 @@ export const agendamentoRowSchema = z.object({
 	enquete_finalizacao_enviada_em: z.string().nullable().optional(),
 	enquete_lembrado_em: z.string().nullable().optional(),
 	enquete_lembretes: z.number().nullable().optional(),
+	feedback_enviado_em: z.string().nullable().optional(),
 	created_at: z.string().nullable().optional(),
 	updated_at: z.string().nullable().optional(),
 });
@@ -238,6 +239,15 @@ export class AppSupabaseClient {
 			.update({ enquete_lembrado_em: new Date().toISOString(), enquete_lembretes: lembretes })
 			.eq('id', id);
 		if (error) throw new Error(`Supabase mark enquete lembrada: ${error.message}`);
+	}
+
+	/** Registra que já pedimos feedback desse atendimento (job de 3 dias). */
+	async markFeedbackEnviado(id: number): Promise<void> {
+		const { error } = await this.client
+			.from('agendamentos')
+			.update({ feedback_enviado_em: new Date().toISOString() })
+			.eq('id', id);
+		if (error) throw new Error(`Supabase mark feedback: ${error.message}`);
 	}
 
 	async markEnqueteEnviada(id: number): Promise<void> {

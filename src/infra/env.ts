@@ -57,6 +57,11 @@ const envSchema = z.object({
 	 *  Comparação pelos últimos 8 dígitos (robusto a DDI/DDD/9º dígito). */
 	HELENA_NUMEROS_BLOQUEADOS: z.string().optional(),
 
+	/** Link de avaliação (Google, Instagram...) enviado à cliente que responde
+	 *  "amei o resultado" no feedback de 3 dias. Sem isso, a Helena pede a
+	 *  avaliação sem link. */
+	CAMILA_LINK_AVALIACAO: z.string().optional(),
+
 	/** Período de recesso da Camila (YYYY-MM-DD). Durante esse intervalo, se a
 	 *  cliente pedir pra falar com a Camila, a Helena informa o recesso e que ela
 	 *  retorna depois — sem transferir/desativar a IA. Ambos opcionais; só ativa

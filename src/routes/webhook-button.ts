@@ -14,6 +14,7 @@ import {
 } from '../domain/manutencao.js';
 import { TRINKS_STATUS } from '../domain/trinks-status.js';
 
+import { getEnv } from '../infra/env.js';
 import { createRequestLogger } from '../infra/logger.js';
 
 export interface ButtonHandlerParams {
@@ -470,6 +471,65 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				telefone,
 				'Tudo bem! 💖 Me conta qual dia e horário fica melhor pra sua manutenção que eu vou ver as opções.',
 			);
+			break;
+		}
+
+		// ── Feedback 3 dias depois do atendimento (pedido da Camila, 01/09/2026) ──
+
+		case 'feedback_bom':
+		case 'feedback_ruim': {
+			if (!agendamentoId) return;
+			const agId = Number(agendamentoId);
+			const gostou = action === 'feedback_bom';
+			const env = getEnv();
+			const paraCamila = env.UAZAPI_CAMILA_PHONE ?? env.UAZAPI_GRUPO_TIME;
+
+			// Contexto pro aviso da Camila. Se não der pra ler, seguimos mesmo
+			// assim: a resposta da cliente é mais importante que o detalhe.
+			let quem = 'A cliente';
+			let servico = '';
+			let quando = '';
+			try {
+				const ag = await deps.trinks.getAgendamento(agId);
+				quem = ag.cliente.nome.trim();
+				servico = ag.servico.nome;
+				quando = `${ag.dataHoraInicio.slice(8, 10)}/${ag.dataHoraInicio.slice(5, 7)}`;
+			} catch (err) {
+				log.warn({ err, agId }, 'feedback: não consegui ler o agendamento');
+			}
+
+			if (gostou) {
+				const link = env.CAMILA_LINK_AVALIACAO;
+				await deps.uazapi
+					.sendText(
+						telefone,
+						link
+							? `Que alegria ler isso! 💖 Se puder deixar sua avaliação aqui, ajuda demais a gente: ${link}`
+							: 'Que alegria ler isso! 💖 Se puder deixar uma avaliação nossa, ajuda demais 🥰',
+					)
+					.catch(() => {});
+				await deps.uazapi
+					.sendText(
+						paraCamila,
+						`⭐ *${quem}* amou o resultado${servico ? ` (${servico}${quando ? `, ${quando}` : ''})` : ''}. Boa hora pra pedir foto ou depoimento.`,
+					)
+					.catch(() => {});
+			} else {
+				// Reclamação de resultado é conversa de dona. A Helena acolhe e sai
+				// da frente — não tenta contornar, não oferece desconto, não agenda.
+				await deps.uazapi
+					.sendText(
+						telefone,
+						'Poxa, sinto muito que não tenha ficado como você esperava 💔 Já avisei a Camila e ela vai te chamar pra entender direitinho.',
+					)
+					.catch(() => {});
+				await deps.uazapi
+					.sendText(
+						paraCamila,
+						`⚠️ *${quem}* disse que o resultado podia estar melhor${servico ? ` (${servico}${quando ? `, ${quando}` : ''})` : ''}.\n\nEla está esperando seu contato.`,
+					)
+					.catch(() => {});
+			}
 			break;
 		}
 

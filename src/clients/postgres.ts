@@ -111,7 +111,8 @@ export class PostgresClient {
 				('enquete',        true, ARRAY['0 20 * * *'],                          'Enquete pós-atendimento (final do dia)'),
 				('sync_clientes',  true, ARRAY['0 4 * * 0'],                           'Sincroniza clientes da Trinks pro Postgres (domingo madrugada)'),
 				('detectar_conflitos', true, ARRAY['0 8 * * *','0 12 * * *','0 19 * * *'], 'Detecta agendamentos sobrepostos (qualquer origem) e alerta a Camila'),
-				('lembrar_pendentes', true, ARRAY['0 8 * * *','0 20 * * *'],           'Cutuca a Camila sobre botoes de "finalizou?" sem resposta (max 3 por vez, 3 tentativas por atendimento)')
+				('lembrar_pendentes', true, ARRAY['0 8 * * *','0 20 * * *'],           'Cutuca a Camila sobre botoes de "finalizou?" sem resposta (max 3 por vez, 3 tentativas por atendimento)'),
+				('feedback_pos_atendimento', true, ARRAY['0 10 * * *'],                'Pergunta a cliente, 3 dias depois, como ficou o resultado (prova social / queixa)')
 			ON CONFLICT (job_name) DO NOTHING;
 		`);
 	}

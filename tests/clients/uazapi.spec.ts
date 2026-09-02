@@ -296,3 +296,13 @@ describe('uazapiWebhookSchema', () => {
 		expect(r.success).toBe(true);
 	});
 });
+
+describe('parseButtonId: feedback pós-atendimento', () => {
+	it('reconhece resposta positiva', () => {
+		expect(parseButtonId('Fb_bom700')).toEqual({ action: 'feedback_bom', agendamentoId: '700' });
+	});
+
+	it('reconhece resposta negativa', () => {
+		expect(parseButtonId('Fb_ruim700')).toEqual({ action: 'feedback_ruim', agendamentoId: '700' });
+	});
+});

@@ -25,6 +25,7 @@ import { rootLogger } from './infra/logger.js';
 import { Scheduler } from './infra/scheduler.js';
 import { runDetectarConflitos } from './jobs/detectar-conflitos.js';
 import { runEnqueteFinalizacao } from './jobs/enquete-finalizacao.js';
+import { runFeedbackPosAtendimento } from './jobs/feedback-pos-atendimento.js';
 import { runLembrarPendentes } from './jobs/lembrar-pendentes.js';
 import { runLembreteAmanha } from './jobs/lembrete-amanha.js';
 import { runSyncClientes } from './jobs/sync-clientes.js';
@@ -133,6 +134,15 @@ export async function bootApp(): Promise<BootResult> {
 			trinks,
 			supabase,
 			uazapi,
+			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
+		}),
+	);
+	scheduler.register('feedback_pos_atendimento', () =>
+		runFeedbackPosAtendimento({
+			trinks,
+			supabase,
+			uazapi,
+			postgres,
 			profissionalId: env.TRINKS_PROFISSIONAL_ID_CAMILA,
 		}),
 	);
