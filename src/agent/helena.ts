@@ -9,10 +9,10 @@ import { nowBRT } from '../domain/data-brt.js';
 import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
 import { isLeadVip } from '../domain/lead.js';
+import { ChatMemory } from '../domain/memory.js';
 import { nomeParecePessoa } from '../domain/nome-cliente.js';
 import { recessoInfoParaPrompt } from '../domain/recesso.js';
 import { servicoIndisponivel } from '../domain/servico-indisponivel.js';
-import { ChatMemory } from '../domain/memory.js';
 import { getEnv } from '../infra/env.js';
 import type { Logger } from '../infra/logger.js';
 import { createRequestLogger } from '../infra/logger.js';
@@ -46,7 +46,20 @@ function formatCatalogoPrecos(servicos: Array<{ nome: string; preco?: number | n
 		.sort((a, b) => a.nome.localeCompare(b.nome));
 	if (validos.length === 0) return '';
 	const linhas = validos.map((s) => `- ${s.nome}: R$${s.preco}`);
-	return ['## Tabela de preços (fonte: Trinks — use SEMPRE estes valores, NUNCA invente)', '', ...linhas].join('\n');
+	return [
+		'## Tabela de preços (fonte: Trinks — use SEMPRE estes valores, NUNCA invente)',
+		'',
+		...linhas,
+	].join('\n');
+}
+
+/** Bloco do link de avaliação. Vazio quando não há link configurado — e nesse
+ *  caso o prompt manda a Helena NÃO inventar (foi o que ela fez em 07/09/2026,
+ *  enviando "[link de avaliação]" literal pra uma cliente). */
+function linkAvaliacaoParaPrompt(): string {
+	const link = getEnv().CAMILA_LINK_AVALIACAO;
+	if (!link) return 'Não temos link de avaliação configurado no momento.';
+	return `Link oficial de avaliação (use EXATAMENTE este, nunca outro): ${link}`;
 }
 
 function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string {
@@ -76,6 +89,7 @@ function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string 
 		.replace('{{pdf_catalogo_enviado_h}}', pdfH)
 		.replace('{{horario_expediente}}', formatScheduleForPrompt())
 		.replace('{{recesso_info}}', recessoInfoParaPrompt())
+		.replace('{{link_avaliacao}}', linkAvaliacaoParaPrompt())
 		.replace('{{catalogo_precos}}', catalogoPrecos)
 		.replace('{{historico_cliente}}', historico);
 }
@@ -219,7 +233,12 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 				if (tipoEvento) {
 					const result = toolResult as Record<string, unknown>;
 					const v = result.valor ?? result.valor_sinal;
-					const valor = typeof v === 'number' ? v : typeof v === 'string' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
+					const valor =
+						typeof v === 'number'
+							? v
+							: typeof v === 'string' && !Number.isNaN(Number(v))
+								? Number(v)
+								: undefined;
 					registrarEvento(deps.supabase, {
 						telefone: ctx.telefone,
 						cliente_nome: ctx.lead.nome ?? undefined,

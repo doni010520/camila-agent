@@ -88,3 +88,15 @@ describe('prompt: horário pedido pela cliente', () => {
 		expect(prompt.toLowerCase()).toContain('nunca invente que um horário foi ocupado');
 	});
 });
+
+// Incidente 07/09/2026: sem link configurado, a Helena mandou o texto
+// "[link de avaliação]" literal pra uma cliente que perguntou "avaliação onde?".
+describe('prompt: link de avaliação', () => {
+	it('tem a variável do link', () => {
+		expect(prompt).toContain('{{link_avaliacao}}');
+	});
+
+	it('proíbe inventar link ou mandar placeholder', () => {
+		expect(prompt.toLowerCase()).toContain('nunca invente link');
+	});
+});

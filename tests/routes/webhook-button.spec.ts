@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setTestEnv } from '../../src/infra/env.js';
 import { handleButton } from '../../src/routes/webhook-button.js';
 
@@ -302,6 +302,8 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 // Item 05 do pedido da Camila: feedback 3 dias depois.
 // "se for negativo ela manda a msg eu entro em contato para entender a queixa"
 describe('feedback pós-atendimento (Fb_bom / Fb_ruim)', () => {
+	beforeEach(() => setTestEnv({ CAMILA_LINK_AVALIACAO: 'https://g.page/r/TESTE/review' } as never));
+
 	function makeFbDeps() {
 		const enviados: Array<{ number: string; text: string }> = [];
 		return {
@@ -338,12 +340,34 @@ describe('feedback pós-atendimento (Fb_bom / Fb_ruim)', () => {
 		};
 	}
 
-	it('resposta boa: agradece a cliente e pede a avaliação', async () => {
+	// Sequência pedida pela Camila em 07/09/2026, depois de ver o fluxo rodando:
+	// "Eu queria colher o feedback primeiro para print e postar no Instagram e
+	//  logo após pediria para avaliar no Google"
+	it('resposta boa: pede o depoimento ANTES do link do Google', async () => {
 		const deps = makeFbDeps();
 		await handleButton(fbParams('Fb_bom700', deps));
 
-		const praCliente = deps.enviados.find((e) => e.number === '5571999999999');
-		expect(praCliente?.text.toLowerCase()).toContain('avalia');
+		const praCliente = deps.enviados.filter((e) => e.number === '5571999999999');
+		expect(praCliente).toHaveLength(2);
+		expect(praCliente[0]?.text.toLowerCase()).toContain('como foi');
+		expect(praCliente[0]?.text).not.toContain('http');
+		expect(praCliente[1]?.text).toContain('https://g.page/r/TESTE/review');
+	});
+
+	// Incidente de produção 07/09/2026: sem link configurado, a Helena pediu
+	// avaliação sem dizer onde. A cliente perguntou "Deixar avaliação onde?" e o
+	// modelo inventou — mandou o texto "[link de avaliação]" literal pra ela.
+	it('nunca pede avaliação sem dizer onde quando não há link', async () => {
+		const { setTestEnv: set } = await import('../../src/infra/env.js');
+		set({ CAMILA_LINK_AVALIACAO: undefined } as never);
+		const deps = makeFbDeps();
+		await handleButton(fbParams('Fb_bom700', deps));
+
+		const praCliente = deps.enviados.filter((e) => e.number === '5571999999999');
+		// Sem link: só agradece e pede o depoimento. Não menciona "avaliação"
+		// solta, que é o que gerou a pergunta "onde?" e a alucinação.
+		expect(praCliente.every((m) => !m.text.toLowerCase().includes('avalia'))).toBe(true);
+		set({ CAMILA_LINK_AVALIACAO: 'https://g.page/r/TESTE/review' } as never);
 	});
 
 	it('resposta boa: avisa a Camila que tem prova social pra colher', async () => {

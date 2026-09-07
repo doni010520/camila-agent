@@ -499,15 +499,30 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			}
 
 			if (gostou) {
-				const link = env.CAMILA_LINK_AVALIACAO;
+				// Ordem pedida pela Camila (07/09/2026): "colher o feedback primeiro
+				// para print e postar no Instagram e logo após pediria para avaliar
+				// no Google". Vão duas mensagens nessa ordem — o depoimento escrito
+				// é o que ela printa, e ele some se o link vier junto.
 				await deps.uazapi
 					.sendText(
 						telefone,
-						link
-							? `Que alegria ler isso! 💖 Se puder deixar sua avaliação aqui, ajuda demais a gente: ${link}`
-							: 'Que alegria ler isso! 💖 Se puder deixar uma avaliação nossa, ajuda demais 🥰',
+						'Que alegria ler isso! 💖 Me conta como foi sua experiência aqui no studio? Adoro guardar o carinho de vocês 🥰',
 					)
 					.catch(() => {});
+
+				// Só pedimos avaliação quando temos ONDE. Sem link, a cliente pergunta
+				// "avaliação onde?" e o modelo inventa: em 07/09/2026 ele mandou o
+				// texto "[link de avaliação]" literal pra uma cliente real.
+				const link = env.CAMILA_LINK_AVALIACAO;
+				if (link) {
+					await deps.uazapi
+						.sendText(
+							telefone,
+							`E se puder deixar sua avaliação no Google também, ajuda demais a gente 💖\n\n${link}`,
+						)
+						.catch(() => {});
+				}
+
 				await deps.uazapi
 					.sendText(
 						paraCamila,
