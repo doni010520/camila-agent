@@ -104,6 +104,26 @@ function somarDias(dataISO: string, dias: number): string {
 	return dt.toISOString().slice(0, 10);
 }
 
+/** Máximo de dias que a manutenção pode ser antecipada em relação ao alvo. */
+export const DIAS_ANTES_MAX = 2;
+
+/**
+ * Offsets a visitar em torno do dia alvo, do mais perto pro mais longe.
+ * Empate (véspera x dia seguinte) fica com o mais cedo: 0, -1, +1, -2, +2, +3…
+ */
+function ordemDeBusca(antes: number, depois: number): number[] {
+	const offsets: number[] = [];
+	for (let d = 0; d <= Math.max(antes, depois); d++) {
+		if (d === 0) {
+			offsets.push(0);
+			continue;
+		}
+		if (d <= antes) offsets.push(-d);
+		if (d <= depois) offsets.push(d);
+	}
+	return offsets;
+}
+
 export interface EscolhaHorarioManutencao {
 	/** ISO naive BRT, ex: "2026-09-12T16:00:00" */
 	dataHora: string;
@@ -121,7 +141,12 @@ export interface EscolhaHorarioManutencao {
  * Ordem de busca (decidida com o Adonias): o dia alvo vale mais que o horário.
  *   1. dia alvo, mesmo horário
  *   2. dia alvo, horário livre mais próximo
- *   3. dias seguintes, mesma lógica
+ *   3. dias vizinhos, do mais perto do alvo pro mais longe, mesma lógica
+ *
+ * A janela anda nos DOIS sentidos (caso Iracema, 11/09/2026): o alvo caiu num
+ * dia lotado e a oferta saltava pra 18 dias, enquanto a véspera do alvo estava
+ * livre. Pra cílio, atrasar é pior que adiantar — a cliente perde volume. Por
+ * isso aceitamos até DIAS_ANTES_MAX antes do alvo, e no empate fica o mais cedo.
  *
  * Um dia que falhar na consulta (429 da Trinks) é PULADO, nunca tratado como
  * dia sem vaga — senão a proposta erra por causa de instabilidade.
@@ -131,6 +156,8 @@ export async function escolherHorarioManutencao(opts: {
 	duracaoMin: number;
 	intervaloDias: number;
 	diasDeBusca?: number;
+	/** Quantos dias ANTES do alvo aceitamos (padrão DIAS_ANTES_MAX). */
+	diasAntes?: number;
 	vagosDoDia: (data: string) => Promise<string[]>;
 }): Promise<EscolhaHorarioManutencao | null> {
 	const m = opts.dataHoraOriginal.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
@@ -139,9 +166,10 @@ export async function escolherHorarioManutencao(opts: {
 	const horaOriginal = m[2];
 	const alvoMin = minutosDoHorario(horaOriginal);
 	const janela = opts.diasDeBusca ?? 7;
+	const antes = opts.diasAntes ?? DIAS_ANTES_MAX;
 
-	for (let i = 0; i < janela; i++) {
-		const dia = somarDias(diaAlvo, i);
+	for (const offset of ordemDeBusca(antes, janela - 1)) {
+		const dia = somarDias(diaAlvo, offset);
 
 		let vagos: string[];
 		try {

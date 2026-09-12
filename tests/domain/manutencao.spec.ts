@@ -128,3 +128,71 @@ describe('getManutencaoServiceName (regra da Camila)', () => {
 		);
 	});
 });
+
+/**
+ * Caso real Iracema (11/09/2026) — a busca só andava PRA FRENTE.
+ *
+ * Atendimento 11/09 18:00, Manutenção volume Russo 15 dias, 90 min, com a
+ * Camila Rosario. Alvo = 26/09, dia em que a agenda dela estava zerada; 27 e 28
+ * também. A oferta saltou pra 29/09 (18 dias) enquanto o dia 25/09 — um dia
+ * ANTES do alvo — tinha 15:00 a 17:30 livres.
+ *
+ * Pra manutenção de cílio atrasar é pior que adiantar (a cliente perde volume),
+ * então a busca passa a olhar os dois lados: até 2 dias antes e 7 depois, sempre
+ * do mais próximo do alvo pro mais distante, empate indo pro mais cedo.
+ */
+describe('escolherHorarioManutencao — janela nos dois sentidos', () => {
+	const iracema = {
+		dataHoraOriginal: '2026-09-11T18:00:00',
+		duracaoMin: 90,
+		intervaloDias: 15,
+	};
+	// agenda real medida em produção
+	const AGENDA_REAL: Record<string, string[]> = {
+		'2026-09-25': ['09:00', '09:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'],
+		'2026-09-26': [],
+		'2026-09-27': [],
+		'2026-09-28': [],
+		'2026-09-29': ['10:30', '11:00', '11:30', '12:00', '15:30', '17:30'],
+	};
+
+	it('🎯 caso Iracema: alvo lotado → recua pro dia 25 em vez de saltar pro 29', async () => {
+		const r = await escolherHorarioManutencao({
+			...iracema,
+			vagosDoDia: async (d) => AGENDA_REAL[d] ?? [],
+		});
+
+		// 25/09 16:30 cabe 90 min (16:30, 17:00, 17:30) e é o mais perto das 18h.
+		expect(r).toEqual({ dataHora: '2026-09-25T16:30:00', exato: false });
+	});
+
+	it('o dia alvo continua ganhando de qualquer vizinho', async () => {
+		const r = await escolherHorarioManutencao({
+			...iracema,
+			vagosDoDia: async (d) =>
+				d === '2026-09-26' ? ['10:00', '10:30', '11:00'] : (AGENDA_REAL[d] ?? []),
+		});
+
+		expect(r?.dataHora.startsWith('2026-09-26')).toBe(true);
+	});
+
+	it('empate entre véspera e dia seguinte fica com o mais cedo', async () => {
+		const r = await escolherHorarioManutencao({
+			...iracema,
+			vagosDoDia: async (d) =>
+				d === '2026-09-25' || d === '2026-09-27' ? ['17:00', '17:30', '18:00'] : [],
+		});
+
+		expect(r?.dataHora.startsWith('2026-09-25')).toBe(true);
+	});
+
+	it('não recua mais de 2 dias: 13 dias é o piso', async () => {
+		const r = await escolherHorarioManutencao({
+			...iracema,
+			// só o dia 23 (12 dias) tem vaga — cedo demais, não serve
+			vagosDoDia: async (d) => (d === '2026-09-23' ? ['17:00', '17:30', '18:00'] : []),
+		});
+
+		expect(r).toBeNull();
+	});
+});
