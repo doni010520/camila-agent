@@ -466,3 +466,168 @@ describe('histórico de compromisso pelos botões da Camila', () => {
 		);
 	});
 });
+
+/**
+ * A cliente confirma a manutenção pelo botão. Esse caminho montava o contexto
+ * do agendamento com `etiquetas: []` e `sinal_pago: false` fixos no código —
+ * então a regra de sinal obrigatório (política de compromisso) não pegava aqui:
+ * quem estava marcada com #sinal-on fechava manutenção sem pagar nada.
+ */
+describe('Manut_sim — regra de sinal vale também no botão', () => {
+	const AG_ORIGEM = {
+		id: 700,
+		status: { id: 8, nome: 'Finalizado' },
+		cliente: { id: 100, nome: 'Ana Beatriz' },
+		servico: { id: 10, nome: 'Volume Russo' },
+		profissional: { id: 170223, nome: 'Camila' },
+		dataHoraInicio: '2026-09-11T18:00:00',
+		duracaoEmMinutos: 90,
+		valor: 200,
+	};
+
+	function makeManutDeps() {
+		const sentTexts: string[] = [];
+		const criarHandler = vi.fn().mockResolvedValue({ status: 'ok', agendamento_id: 999 });
+		const pixHandler = vi.fn().mockResolvedValue({ status: 'ok' });
+		const consultarHandler = vi.fn().mockResolvedValue({ status: 'erro' });
+		const tools: Record<string, unknown> = {
+			criar_agendamento: { handler: criarHandler },
+			envio_pix: { handler: pixHandler },
+			consultar_disponibilidade: { handler: consultarHandler },
+		};
+		return {
+			criarHandler,
+			pixHandler,
+			consultarHandler,
+			sentTexts,
+			deps: {
+				trinks: { getAgendamento: vi.fn().mockResolvedValue(AG_ORIGEM) },
+				uazapi: {
+					sendText: vi.fn().mockImplementation(async (_n: string, t: string) => {
+						sentTexts.push(t);
+					}),
+				},
+				supabase: {
+					listServicos: vi.fn().mockResolvedValue([
+						{ id: 11, nome: 'Manutenção volume Russo 15 dias', preco: 150 },
+					]),
+				},
+				toolRegistry: { get: (n: string) => tools[n] },
+				postgres: {},
+			} as never,
+		};
+	}
+
+	function leadManagerCom(lead: Record<string, unknown>) {
+		return {
+			findByTelefoneFlex: vi.fn().mockResolvedValue(lead),
+			registrarCompromisso: vi.fn().mockResolvedValue(undefined),
+			mergeMetadata: vi.fn().mockResolvedValue(true),
+		} as never;
+	}
+
+	const META_OFERTA = {
+		proxima_manutencao_servico: 'Manutenção volume Russo 15 dias',
+		proxima_manutencao_data: '2026-09-25T16:30:00',
+	};
+
+	it('🎯 cliente na regra: recebe o PIX em vez de outras datas', async () => {
+		// O gate vive dentro de criar_agendamento; aqui medimos o que o BOTÃO faz
+		// quando a tool recusa por política — antes caía no ramo de "horário
+		// ocupado" e oferecia datas alternativas, que não é o caso dela.
+		const { deps, pixHandler, sentTexts, consultarHandler } = makeManutDeps();
+		deps.toolRegistry.get('criar_agendamento').handler = vi.fn().mockResolvedValue({
+			status: 'erro',
+			razao: 'Esta cliente só marca com o sinal de 30% pago.',
+			detalhes: { politica: 'sinal_obrigatorio' },
+		});
+		const leadManager = leadManagerCom({
+			telefone: '5571988887777',
+			nome: 'Ana Beatriz',
+			etiquetas: ['sinal-sempre'],
+			sinal_pago: false,
+			metadata: META_OFERTA,
+		});
+
+		await handleButton({
+			telefone: '5571988887777',
+			buttonOrListid: 'Manut_sim700',
+			deps,
+			leadManager,
+		});
+
+		expect(pixHandler).toHaveBeenCalled();
+		expect(sentTexts.join(' | ')).toMatch(/sinal/i);
+		expect(consultarHandler).not.toHaveBeenCalled();
+	});
+
+	it('cliente normal continua fechando a manutenção pelo botão', async () => {
+		const { deps, criarHandler } = makeManutDeps();
+		const leadManager = leadManagerCom({
+			telefone: '5571988887777',
+			nome: 'Maria',
+			etiquetas: [],
+			sinal_pago: false,
+			metadata: META_OFERTA,
+		});
+
+		await handleButton({
+			telefone: '5571988887777',
+			buttonOrListid: 'Manut_sim700',
+			deps,
+			leadManager,
+		});
+
+		expect(criarHandler).toHaveBeenCalled();
+	});
+
+	it('o contexto passado ao agendamento carrega o lead real, não um vazio fixo', async () => {
+		const { deps, criarHandler } = makeManutDeps();
+		const leadManager = leadManagerCom({
+			telefone: '5571988887777',
+			nome: 'Maria',
+			etiquetas: ['vip'],
+			sinal_pago: true,
+			metadata: { ...META_OFERTA, compromisso: { remarcacoes: 1, faltas: 0 } },
+		});
+
+		await handleButton({
+			telefone: '5571988887777',
+			buttonOrListid: 'Manut_sim700',
+			deps,
+			leadManager,
+		});
+
+		const ctxUsado = criarHandler.mock.calls[0]?.[1];
+		expect(ctxUsado.lead.etiquetas).toEqual(['vip']);
+		expect(ctxUsado.lead.sinal_pago).toBe(true);
+		expect(ctxUsado.lead.metadata).toMatchObject({ compromisso: { remarcacoes: 1 } });
+	});
+
+	it('🎯 horário ocupado: as alternativas começam ANTES da data ofertada', async () => {
+		// Mesmo defeito de mão única da escolha da data: a Iracema recebeu a
+		// oferta pro dia 29 e, quando o horário caiu, só ouviu falar de 29 em
+		// diante — o dia 25, livre, nunca apareceu.
+		const { deps, consultarHandler } = makeManutDeps();
+		deps.toolRegistry.get('criar_agendamento').handler = vi
+			.fn()
+			.mockResolvedValue({ status: 'erro', razao: 'Horário ocupado' });
+		const leadManager = leadManagerCom({
+			telefone: '5571988887777',
+			nome: 'Maria',
+			etiquetas: [],
+			sinal_pago: false,
+			metadata: META_OFERTA, // oferta era 2026-09-25T16:30
+		});
+
+		await handleButton({
+			telefone: '5571988887777',
+			buttonOrListid: 'Manut_sim700',
+			deps,
+			leadManager,
+		});
+
+		expect(consultarHandler).toHaveBeenCalled();
+		expect(consultarHandler.mock.calls[0]?.[0]?.data).toBe('2026-09-23');
+	});
+});

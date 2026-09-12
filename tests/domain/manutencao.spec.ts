@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	escolherHorarioManutencao,
+	inicioBuscaAlternativas,
 	getManutencaoServiceName,
 	intervaloManutencaoDias,
 } from '../../src/domain/manutencao.js';
@@ -196,3 +197,17 @@ describe('escolherHorarioManutencao — janela nos dois sentidos', () => {
 		expect(r).toBeNull();
 	});
 });
+
+describe('inicioBuscaAlternativas', () => {
+	it('recua 2 dias da data ofertada (caso Iracema: 29 → 27)', () => {
+		expect(inicioBuscaAlternativas('2026-09-29T12:30:00', '2026-09-12')).toBe('2026-09-27');
+	});
+
+	it('🎯 nunca recua pra antes de hoje', () => {
+		expect(inicioBuscaAlternativas('2026-09-13T10:00:00', '2026-09-12')).toBe('2026-09-12');
+	});
+
+	it('quando a data ofertada é hoje, começa hoje', () => {
+		expect(inicioBuscaAlternativas('2026-09-12T10:00:00', '2026-09-12')).toBe('2026-09-12');
+	});
+})

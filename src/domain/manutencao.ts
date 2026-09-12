@@ -124,6 +124,19 @@ function ordemDeBusca(antes: number, depois: number): number[] {
 	return offsets;
 }
 
+/**
+ * Data em que a busca por horários ALTERNATIVOS deve começar quando a vaga
+ * ofertada caiu. Recua o mesmo tanto que a escolha da data aceita, pra não
+ * repetir o defeito de mão única: a Iracema recebeu oferta pro dia 29 e, quando
+ * o horário foi ocupado, só ouviu falar de 29 em diante — o dia 25, livre,
+ * nunca apareceu. Nunca recua pra antes de hoje.
+ */
+export function inicioBuscaAlternativas(dataOfertadaISO: string, hojeISO: string): string {
+	const dia = dataOfertadaISO.slice(0, 10);
+	const recuado = somarDias(dia, -DIAS_ANTES_MAX);
+	return recuado < hojeISO ? hojeISO : recuado;
+}
+
 export interface EscolhaHorarioManutencao {
 	/** ISO naive BRT, ex: "2026-09-12T16:00:00" */
 	dataHora: string;

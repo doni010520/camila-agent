@@ -6,10 +6,12 @@ import type { TrinksClient } from '../clients/trinks.js';
 import type { UazapiClient } from '../clients/uazapi.js';
 import { parseButtonId } from '../clients/uazapi.js';
 import type { LeadManager } from '../domain/lead.js';
+import { todayBRT } from '../domain/data-brt.js';
 import {
 	escolherHorarioManutencao,
 	formatarDataManutencao,
 	getManutencaoServiceName,
+	inicioBuscaAlternativas,
 	intervaloManutencaoDias,
 } from '../domain/manutencao.js';
 import { TRINKS_STATUS } from '../domain/trinks-status.js';
@@ -394,13 +396,19 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 			if (!agendamentoId) return;
 			const origemId = Number(agendamentoId);
 
-			// Pega os dados pré-calculados do lead.metadata
-			const lead = await deps.supabase.raw
-				.from('leads_energia_solar')
-				.select('metadata')
-				.eq('telefone', telefone)
-				.maybeSingle();
-			const meta = (lead.data?.metadata ?? {}) as Record<string, unknown>;
+			// Lê o lead INTEIRO (não só o metadata): as etiquetas e o sinal_pago
+			// decidem se a cliente está na regra de sinal obrigatório. Antes o
+			// contexto era montado com `etiquetas: []` fixo e quem estava marcada
+			// com #sinal-on fechava manutenção pelo botão sem pagar nada.
+			// findByTelefoneFlex tolera a diferença do 9º dígito.
+			const leadRow = await params.leadManager.findByTelefoneFlex(telefone);
+			const meta = (leadRow?.metadata ?? {}) as Record<string, unknown>;
+			const leadCtx = {
+				nome: leadRow?.nome ?? null,
+				etiquetas: leadRow?.etiquetas ?? [],
+				sinal_pago: leadRow?.sinal_pago ?? false,
+				metadata: leadRow?.metadata ?? null,
+			};
 			const servicoNome =
 				typeof meta.proxima_manutencao_servico === 'string'
 					? meta.proxima_manutencao_servico
@@ -442,8 +450,32 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 					servico: servicoNome,
 					data_e_hora: dataHora,
 				},
-				{ telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } },
+				{ telefone, lead: leadCtx },
 			);
+
+			// Cliente na regra de sinal: não marca, cobra. Antes caía no ramo de
+			// "horário ocupado" e oferecia outras datas, que não é o caso.
+			if (
+				result.status === 'erro' &&
+				(result.detalhes as { politica?: string } | undefined)?.politica === 'sinal_obrigatorio'
+			) {
+				await deps.uazapi
+					.sendText(
+						telefone,
+						'Pra garantir seu horário, pedimos um sinal de 30% 💖 Te mando o PIX agora!',
+					)
+					.catch(() => {});
+				const pixTool = deps.toolRegistry.get('envio_pix');
+				if (pixTool) {
+					const servicos = await deps.supabase.listServicos().catch(() => []);
+					const precoServico = servicos.find((sv) => sv.nome === servicoNome)?.preco;
+					const base = precoServico ?? ag.valor ?? 0;
+					await pixTool
+						.handler({ telefone, valor: Math.round(base * 0.3 * 100) / 100 }, { telefone, lead: leadCtx })
+						.catch(() => undefined);
+				}
+				return;
+			}
 
 			if (result.status === 'ok') {
 				await deps.uazapi
@@ -459,8 +491,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				if (consultarTool) {
 					try {
 						const disp = await consultarTool.handler(
-							{ servico: servicoNome, data: dataHora.slice(0, 10), hora_e_turno: 'qualquer' },
-							{ telefone, lead: { nome: ag.cliente.nome, etiquetas: [], sinal_pago: false } },
+							{
+								servico: servicoNome,
+								data: inicioBuscaAlternativas(dataHora, todayBRT()),
+								hora_e_turno: 'qualquer',
+							},
+							{ telefone, lead: leadCtx },
 						);
 						const opcoes = disp as {
 							status: string;
