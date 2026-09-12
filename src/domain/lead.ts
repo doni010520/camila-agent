@@ -1,6 +1,13 @@
 import type { AppSupabaseClient, LeadCamilaRow } from '../clients/supabase.js';
 import type { Logger } from '../infra/logger.js';
 import { rootLogger } from '../infra/logger.js';
+import {
+	ETIQUETA_SINAL_SEMPRE,
+	lerHistorico,
+	registrarAtendimentoConcluido,
+	registrarFalta,
+	registrarRemarcacao,
+} from './compromisso.js';
 
 /** Hours before a conversation is considered "new" (resets pdf_catalogo_enviado_em) */
 const NEW_CONVERSATION_HOURS = 6;
@@ -182,6 +189,54 @@ export class LeadManager {
 	isIaAtiva(lead: LeadCamilaRow): boolean {
 		// 'on' or null → ativa; only 'off' disables
 		return lead.ia_on_off !== 'off';
+	}
+
+	/**
+	 * Atualiza o histórico de compromisso da cliente (remarcou, faltou, cumpriu).
+	 * Alimenta a regra de sinal obrigatório — ver `domain/compromisso`.
+	 */
+	async registrarCompromisso(
+		telefone: string,
+		evento: 'remarcacao' | 'falta' | 'atendimento_concluido',
+	): Promise<void> {
+		const lead = await this.getLead(telefone);
+		if (!lead) return; // cliente desconhecida — nada a contar
+		const atual = lerHistorico(lead);
+		const proximo =
+			evento === 'remarcacao'
+				? registrarRemarcacao(atual)
+				: evento === 'falta'
+					? registrarFalta(atual)
+					: registrarAtendimentoConcluido(atual);
+
+		const meta = { ...(lead.metadata ?? {}) } as Record<string, unknown>;
+		meta.compromisso = proximo;
+		await this.updateLead(telefone, { metadata: meta as LeadCamilaRow['metadata'] });
+		this.log.info({ telefone: telefone.slice(-8), evento, ...proximo }, 'Compromisso atualizado');
+	}
+
+	/**
+	 * Liga/desliga na mão a regra de sinal obrigatório (comandos `#sinal-on` /
+	 * `#sinal-off` que a Camila digita no chat da cliente). Desligar também PERDOA
+	 * o histórico — senão o contador reativaria a regra sozinho na hora seguinte.
+	 */
+	async setSinalSempre(telefone: string, exige: boolean): Promise<string[]> {
+		const lead = await this.getLead(telefone);
+		if (!lead) throw new Error('Lead não encontrado');
+		const semEtiqueta = (lead.etiquetas ?? []).filter(
+			(e) => e.toLowerCase() !== ETIQUETA_SINAL_SEMPRE,
+		);
+		const next = exige ? [...semEtiqueta, ETIQUETA_SINAL_SEMPRE] : semEtiqueta;
+
+		const updates: Partial<LeadCamilaRow> = { etiquetas: next };
+		if (!exige) {
+			const meta = { ...(lead.metadata ?? {}) } as Record<string, unknown>;
+			meta.compromisso = { remarcacoes: 0, faltas: 0, atendimentos_limpos: 0 };
+			updates.metadata = meta as LeadCamilaRow['metadata'];
+		}
+		await this.updateLead(telefone, updates);
+		this.log.info({ telefone: telefone.slice(-8), exige }, 'Sinal obrigatório alterado');
+		return next;
 	}
 
 	async markSinalPago(telefone: string): Promise<void> {

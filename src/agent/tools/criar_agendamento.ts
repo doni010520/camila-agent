@@ -4,6 +4,7 @@ import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { isNumeroBloqueado } from '../../domain/bloqueio.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { exigeSinalSempre } from '../../domain/compromisso.js';
 import { dataEstaNoRecesso, dataRetornoRecesso } from '../../domain/recesso.js';
 import { servicoIndisponivel } from '../../domain/servico-indisponivel.js';
 import { todayBRT, trinksWallClockToEpochMin } from '../../domain/data-brt.js';
@@ -45,11 +46,22 @@ export function createCriarAgendamento(deps: {
 		description:
 			'Cria um novo agendamento no Trinks. Retorna status ok SOMENTE se a leitura de verificação confirmar a escrita.',
 		inputSchema,
-		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
+		handler: async (input: Input, ctx: ToolContext): Promise<ToolResult> => {
+			// POLÍTICA DE COMPROMISSO: cliente que já remarcou/faltou demais não
+			// ocupa horário na agenda sem o sinal entrar (ver `domain/compromisso`).
+			if (exigeSinalSempre(ctx.lead) && !ctx.lead.sinal_pago) {
+				return {
+					status: 'erro',
+					razao:
+						'Esta cliente só marca com o sinal de 30% pago. NÃO marque ainda. Diga que pra garantir o horário é preciso o sinal, chame `envio_pix` e peça o comprovante. Só depois de `atualizar_sinal` retornar ok, chame `criar_agendamento` de novo.',
+					detalhes: { politica: 'sinal_obrigatorio' },
+				};
+			}
+
 			// Número bloqueado: nunca cria agendamento. Defesa em profundidade — se
 			// a cliente der data/hora direto (pulando consultar_disponibilidade),
 			// ainda assim recusamos. Sem encaixe, sem avisar a Camila.
-			if (isNumeroBloqueado(_ctx.telefone) || isNumeroBloqueado(input.telefone)) {
+			if (isNumeroBloqueado(ctx.telefone) || isNumeroBloqueado(input.telefone)) {
 				return {
 					status: 'erro',
 					razao:

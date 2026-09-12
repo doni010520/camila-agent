@@ -374,3 +374,46 @@ describe('criar_agendamento', () => {
 		expect(trinks.createAgendamento).toHaveBeenCalled();
 	});
 });
+
+describe('política de compromisso no criar_agendamento', () => {
+	const ctxRemarcadora: ToolContext = {
+		telefone: '5571999999999',
+		lead: {
+			nome: 'Ana Beatriz',
+			etiquetas: ['sinal-sempre'],
+			sinal_pago: false,
+			metadata: {},
+		},
+	};
+
+	it('🎯 cliente na regra e sem sinal → NÃO ocupa horário na agenda', async () => {
+		const { tool, trinks } = makeDeps();
+		const r = await tool.handler(
+			{
+				telefone: '5571999999999',
+				nome: 'Ana Beatriz',
+				servico: 'Volume Brasileiro',
+				data_e_hora: '2026-05-20T14:00:00',
+			},
+			ctxRemarcadora,
+		);
+		expect(r.status).toBe('erro');
+		if (r.status === 'erro') expect(r.razao).toMatch(/sinal/i);
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('mesma cliente com sinal pago → marca normalmente', async () => {
+		const { tool } = makeDeps();
+		const r = await tool.handler(
+			{
+				telefone: '5571999999999',
+				nome: 'Ana Beatriz',
+				servico: 'Volume Brasileiro',
+				data_e_hora: '2026-05-20T14:00:00',
+			},
+			{ ...ctxRemarcadora, lead: { ...ctxRemarcadora.lead, sinal_pago: true } },
+		);
+		// Passa pelo gate: chega ao fluxo normal em vez de parar no sinal.
+		expect(r.status).toBe('ok');
+	});
+});

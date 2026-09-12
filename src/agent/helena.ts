@@ -5,10 +5,11 @@ import type { AppOpenAIClient } from '../clients/openai.js';
 import type { AppSupabaseClient } from '../clients/supabase.js';
 import type { LeadCamilaRow } from '../clients/supabase.js';
 import type { UazapiClient } from '../clients/uazapi.js';
+import { eventoCompromissoDaTool, exigeSinalSempre } from '../domain/compromisso.js';
 import { nowBRT } from '../domain/data-brt.js';
 import { type EventoTipo, registrarEvento } from '../domain/eventos.js';
 import { formatScheduleForPrompt } from '../domain/horario-funcionamento.js';
-import { isLeadVip } from '../domain/lead.js';
+import { LeadManager, isLeadVip } from '../domain/lead.js';
 import { ChatMemory } from '../domain/memory.js';
 import { nomeParecePessoa } from '../domain/nome-cliente.js';
 import { recessoInfoParaPrompt } from '../domain/recesso.js';
@@ -86,6 +87,7 @@ function buildSystemPrompt(lead: LeadCamilaRow, catalogoPrecos: string): string 
 		.replace('{{lead_etiquetas}}', lead.etiquetas.join(', ') || 'nenhuma')
 		.replace('{{cliente_vip}}', isLeadVip(lead) ? 'SIM' : 'não')
 		.replace('{{sinal_pago}}', lead.sinal_pago ? 'sim' : 'não')
+		.replace('{{exige_sinal}}', exigeSinalSempre(lead) ? 'SIM' : 'não')
 		.replace('{{pdf_catalogo_enviado_h}}', pdfH)
 		.replace('{{horario_expediente}}', formatScheduleForPrompt())
 		.replace('{{recesso_info}}', recessoInfoParaPrompt())
@@ -192,6 +194,7 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 					nome: ctx.lead.nome,
 					etiquetas: ctx.lead.etiquetas,
 					sinal_pago: ctx.lead.sinal_pago,
+					metadata: ctx.lead.metadata,
 				},
 			};
 
@@ -215,6 +218,19 @@ export async function runAgent(ctx: AgentContext, deps: AgentDeps): Promise<void
 						await deps.uazapi.sendText(destino, text);
 					},
 				});
+			}
+
+			// Histórico de compromisso (remarcou/faltou) — best-effort.
+			// Alimenta a regra de sinal obrigatório da Camila.
+			{
+				const evento = eventoCompromissoDaTool(tc.function.name, toolResult.status);
+				if (evento) {
+					try {
+						await new LeadManager(deps.supabase, log).registrarCompromisso(ctx.telefone, evento);
+					} catch (err) {
+						log.warn({ err }, 'Falha ao registrar compromisso');
+					}
+				}
 			}
 
 			// Instrumentação de eventos — best-effort, nunca bloqueia o fluxo

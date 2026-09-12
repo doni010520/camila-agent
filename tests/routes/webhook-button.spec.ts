@@ -45,7 +45,7 @@ function makeParams(buttonOrListid: string, deps: ReturnType<typeof makeDeps>) {
 		telefone: '5571999999999',
 		buttonOrListid,
 		deps: deps as never,
-		leadManager: {} as never,
+		leadManager: { registrarCompromisso: vi.fn().mockResolvedValue(undefined) } as never,
 	};
 }
 
@@ -229,6 +229,7 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 					Object.assign(salvo, patch);
 					return true;
 				},
+				registrarCompromisso: async () => undefined,
 			},
 			salvo,
 		};
@@ -264,7 +265,10 @@ describe('finalizar_sim (Fin_sim) — status real da Trinks é 8', () => {
 
 	it('avisa a Camila quando o cadastro da cliente não foi encontrado', async () => {
 		const deps = makeFinalizarDeps();
-		const semLead = { mergeMetadata: async () => false };
+		const semLead = {
+			mergeMetadata: async () => false,
+			registrarCompromisso: async () => undefined,
+		};
 		await handleButton(paramsCom(deps, semLead));
 
 		expect(deps.sentTexts.join(' | ')).toContain('não achei o cadastro dela');
@@ -336,7 +340,7 @@ describe('feedback pós-atendimento (Fb_bom / Fb_ruim)', () => {
 			telefone: '5571999999999',
 			buttonOrListid: botao,
 			deps: deps as never,
-			leadManager: {} as never,
+			leadManager: { registrarCompromisso: async () => undefined } as never,
 		};
 	}
 
@@ -395,5 +399,70 @@ describe('feedback pós-atendimento (Fb_bom / Fb_ruim)', () => {
 
 		const praCliente = deps.enviados.find((e) => e.number === '5571999999999');
 		expect(praCliente?.text.toLowerCase()).not.toContain('avalia');
+	});
+});
+
+describe('histórico de compromisso pelos botões da Camila', () => {
+	function makeParamsComLead(buttonOrListid: string, deps: ReturnType<typeof makeDeps>) {
+		const registrarCompromisso = vi.fn().mockResolvedValue(undefined);
+		return {
+			params: {
+				telefone: '5571999999999',
+				buttonOrListid,
+				deps: deps as never,
+				leadManager: { registrarCompromisso } as never,
+			},
+			registrarCompromisso,
+		};
+	}
+
+	it('🎯 "não compareceu" (finalizar_nao) conta falta pra cliente', async () => {
+		const deps = makeDeps();
+		deps.trinks.marcarClienteFaltou = vi.fn().mockResolvedValue({ ok: true });
+		deps.trinks.getCliente = vi
+			.fn()
+			.mockResolvedValue({
+				id: 100,
+				nome: 'Maria',
+				telefones: [{ ddd: '71', telefone: '988887777' }],
+			});
+		const { params, registrarCompromisso } = makeParamsComLead('Fin_nao500', deps);
+
+		await handleButton(params);
+
+		expect(registrarCompromisso).toHaveBeenCalledWith(
+			expect.stringContaining('988887777'),
+			'falta',
+		);
+	});
+
+	it('atendimento finalizado conta como atendimento limpo (caminho da redenção)', async () => {
+		const deps = makeDeps({
+			getAfterPatch: vi.fn().mockResolvedValue({
+				id: 500,
+				status: { id: 8, nome: 'Finalizado' },
+				cliente: { id: 100, nome: 'Maria' },
+				servico: { id: 10, nome: 'VB' },
+				profissional: { id: 170223, nome: 'Camila' },
+				dataHoraInicio: '2026-05-20T14:00:00',
+				duracaoEmMinutos: 120,
+				valor: 160,
+			}),
+		});
+		deps.trinks.getCliente = vi
+			.fn()
+			.mockResolvedValue({
+				id: 100,
+				nome: 'Maria',
+				telefones: [{ ddd: '71', telefone: '988887777' }],
+			});
+		const { params, registrarCompromisso } = makeParamsComLead('Fin_sim500', deps);
+
+		await handleButton(params);
+
+		expect(registrarCompromisso).toHaveBeenCalledWith(
+			expect.stringContaining('988887777'),
+			'atendimento_concluido',
+		);
 	});
 });

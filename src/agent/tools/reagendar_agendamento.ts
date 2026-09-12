@@ -3,6 +3,7 @@ import type { PostgresClient } from '../../clients/postgres.js';
 import type { AppSupabaseClient } from '../../clients/supabase.js';
 import type { TrinksClient } from '../../clients/trinks.js';
 import { findClienteByTelefone } from '../../domain/cliente-lookup.js';
+import { exigeSinalSempre } from '../../domain/compromisso.js';
 import { trinksWallClockToEpochMin } from '../../domain/data-brt.js';
 import { horarioCabeNosVagos } from '../../domain/horario-funcionamento.js';
 import { ACTIVE_STATUSES, TRINKS_STATUS } from '../../domain/trinks-status.js';
@@ -42,7 +43,19 @@ export function createReagendarAgendamento(deps: {
 		description:
 			'Reagenda um agendamento. Cancela o antigo e cria um novo na nova data/hora — mantém histórico.',
 		inputSchema,
-		handler: async (input: Input, _ctx: ToolContext): Promise<ToolResult> => {
+		handler: async (input: Input, ctx: ToolContext): Promise<ToolResult> => {
+			// 0. POLÍTICA DE COMPROMISSO: quem já remarcou/faltou demais não remarca
+			//    mais de graça — precisa do sinal antes. Decisão no código, não no LLM
+			//    (mesma lição do VIP). O horário antigo fica INTACTO até o sinal entrar.
+			if (exigeSinalSempre(ctx.lead) && !ctx.lead.sinal_pago) {
+				return {
+					status: 'erro',
+					razao:
+						'Esta cliente só pode remarcar com o sinal de 30% pago. NÃO remarque. Diga que pra garantir o novo horário é preciso o sinal, chame `envio_pix` e peça o comprovante. Só depois de `atualizar_sinal` retornar ok, chame `reagendar_agendamento` de novo.',
+					detalhes: { politica: 'sinal_obrigatorio', agendamentoAntigoIntacto: true },
+				};
+			}
+
 			const lookup = await findClienteByTelefone(input.telefone, { trinks, postgres });
 			if (!lookup) return { status: 'erro', razao: 'Cliente não encontrado' };
 			const clienteId = lookup.cliente.id;
@@ -124,7 +137,11 @@ export function createReagendarAgendamento(deps: {
 						let mm = Number(partes[1] ?? 0);
 						for (let i = 0; i < slots; i++) {
 							vagos.add(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-							mm += 30; if (mm >= 60) { hh += 1; mm -= 60; }
+							mm += 30;
+							if (mm >= 60) {
+								hh += 1;
+								mm -= 60;
+							}
 						}
 					}
 					if (!horarioCabeNosVagos(horaInicio, antigo.duracaoEmMinutos ?? 60, Array.from(vagos))) {
@@ -132,7 +149,11 @@ export function createReagendarAgendamento(deps: {
 							status: 'erro',
 							razao:
 								'Novo horário indisponível na agenda (ocupado, bloqueado ou fora do expediente). Mantenha o antigo e use consultar_disponibilidade pra oferecer horários livres.',
-							detalhes: { horario_pedido: horaInicio, agendamentoAntigoIntacto: agIdAntigo, horarios_vagos: prof.horariosVagos },
+							detalhes: {
+								horario_pedido: horaInicio,
+								agendamentoAntigoIntacto: agIdAntigo,
+								horarios_vagos: prof.horariosVagos,
+							},
 						};
 					}
 				}
@@ -163,7 +184,8 @@ export function createReagendarAgendamento(deps: {
 				if (conflito) {
 					return {
 						status: 'erro',
-						razao: 'Novo horário indisponível: a profissional já tem outro atendimento nesse intervalo. Mantenha o antigo e ofereça outro horário pra cliente.',
+						razao:
+							'Novo horário indisponível: a profissional já tem outro atendimento nesse intervalo. Mantenha o antigo e ofereça outro horário pra cliente.',
 						detalhes: {
 							conflitoComServico: conflito.servico.nome,
 							conflitoDataHora: conflito.dataHoraInicio,

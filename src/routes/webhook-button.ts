@@ -31,6 +31,24 @@ export interface ButtonHandlerParams {
 	leadManager: LeadManager;
 }
 
+/**
+ * Telefone da cliente a partir do agendamento (cadastro da Trinks, com fallback
+ * no Postgres). Usado pra creditar o histórico de compromisso na lead certa.
+ */
+async function telefoneDaCliente(
+	deps: { trinks: TrinksClient; postgres: PostgresClient },
+	clienteId: number,
+): Promise<string | null> {
+	try {
+		const cliente = await deps.trinks.getCliente(clienteId);
+		const tel = cliente.telefones?.[0];
+		if (tel) return `${tel.ddi ?? '55'}${tel.ddd ?? ''}${tel.telefone}`;
+	} catch {
+		/* cai no fallback */
+	}
+	return deps.postgres.findPhoneByTrinksId(clienteId).catch(() => null);
+}
+
 export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 	const { telefone, buttonOrListid, deps } = params;
 	const log = createRequestLogger(telefone);
@@ -227,6 +245,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				return;
 			}
 
+			// Atendimento cumprido — conta no histórico de compromisso (a cliente
+			// se redime das remarcações/faltas anteriores). Best-effort.
+			await params.leadManager
+				.registrarCompromisso(numeroCliente, 'atendimento_concluido')
+				.catch(() => undefined);
+
 			// 3. Calcula manutenção
 			const servicoManutencao = getManutencaoServiceName(ag.servico.nome);
 			if (!servicoManutencao) {
@@ -344,6 +368,12 @@ export async function handleButton(params: ButtonHandlerParams): Promise<void> {
 				await deps.supabase
 					.upsertAgendamento({ id: agId, status_id: TRINKS_STATUS.CLIENTE_FALTOU })
 					.catch(() => undefined);
+				const numeroFaltante = await telefoneDaCliente(deps, ag.cliente.id);
+				if (numeroFaltante) {
+					await params.leadManager
+						.registrarCompromisso(numeroFaltante, 'falta')
+						.catch(() => undefined);
+				}
 				await deps.uazapi
 					.sendText(telefone, `📝 ${ag.cliente.nome} marcada como não compareceu.`)
 					.catch(() => {});

@@ -16,7 +16,13 @@ export type ToolResult =
 
 export interface ToolContext {
 	telefone: string;
-	lead: { nome?: string | null; etiquetas: string[]; sinal_pago: boolean };
+	lead: {
+		nome?: string | null;
+		etiquetas: string[];
+		sinal_pago: boolean;
+		/** jsonb do lead — carrega o histórico de compromisso (ver `domain/compromisso`). */
+		metadata?: Record<string, unknown> | null;
+	};
 }
 
 // ═══════════════════════════════════════════════════════════════

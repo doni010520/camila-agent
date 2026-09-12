@@ -48,7 +48,8 @@ function makeDeps(o?: Overrides) {
 		listClientes: vi.fn().mockResolvedValue({ data: [{ id: 100, nome: 'Maria', telefones: [] }] }),
 		listAgendamentos: vi.fn().mockResolvedValue({ data: [AG] }),
 		getAgendamento: getMock,
-		cancelarAgendamento: o?.cancelFn ?? vi.fn().mockResolvedValue({ ok: true, status: 204, body: '' }),
+		cancelarAgendamento:
+			o?.cancelFn ?? vi.fn().mockResolvedValue({ ok: true, status: 204, body: '' }),
 		createAgendamento: o?.createFn ?? vi.fn().mockResolvedValue({ id: 600 }),
 		getCliente: vi.fn().mockResolvedValue({ id: 100, nome: 'Maria' }),
 	};
@@ -135,5 +136,49 @@ describe('reagendar_agendamento (cancel + create strategy)', () => {
 			ctx,
 		);
 		expect(r.status).toBe('aguardando_escolha');
+	});
+});
+
+describe('política de compromisso (cliente que remarca/falta demais)', () => {
+	const ctxRemarcadora: ToolContext = {
+		telefone: '5571999999999',
+		lead: {
+			nome: 'Ana Beatriz',
+			etiquetas: [],
+			sinal_pago: false,
+			metadata: { compromisso: { remarcacoes: 3, faltas: 0, atendimentos_limpos: 0 } },
+		},
+	};
+
+	it('🎯 3 furos e sinal não pago → NÃO remarca, cobra o sinal antes', async () => {
+		const { tool, trinks } = makeDeps();
+		const r = await tool.handler(
+			{ telefone: '5571999999999', nova_data_hora: '2026-05-25T10:00:00' },
+			ctxRemarcadora,
+		);
+		expect(r.status).toBe('erro');
+		if (r.status === 'erro') expect(r.razao).toMatch(/sinal/i);
+		// O horário antigo NÃO pode ser cancelado sem o sinal entrar.
+		expect(trinks.cancelarAgendamento).not.toHaveBeenCalled();
+		expect(trinks.createAgendamento).not.toHaveBeenCalled();
+	});
+
+	it('mesma cliente com sinal já pago → remarca normalmente', async () => {
+		const { tool, trinks } = makeDeps();
+		const r = await tool.handler(
+			{ telefone: '5571999999999', nova_data_hora: '2026-05-25T10:00:00' },
+			{ ...ctxRemarcadora, lead: { ...ctxRemarcadora.lead, sinal_pago: true } },
+		);
+		expect(r.status).toBe('ok');
+		expect(trinks.createAgendamento).toHaveBeenCalled();
+	});
+
+	it('cliente sem histórico de furo remarca de graça, como sempre', async () => {
+		const { tool } = makeDeps();
+		const r = await tool.handler(
+			{ telefone: '5571999999999', nova_data_hora: '2026-05-25T10:00:00' },
+			ctx,
+		);
+		expect(r.status).toBe('ok');
 	});
 });

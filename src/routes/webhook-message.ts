@@ -287,6 +287,25 @@ export function createWebhookMessageRouter(deps: WebhookDeps): Hono {
 			}
 			return c.json({ status: 'ok', command: cmd });
 		}
+		if (cmd === '#sinal-on' || cmd === '#sinal-off') {
+			const exige = cmd === '#sinal-on';
+			try {
+				const tags = await leadManager.setSinalSempre(telefone, exige);
+				await deps.uazapi.sendText(
+					telefone,
+					exige
+						? `💰 Sinal obrigatório ativado — a Helena não marca nem remarca essa cliente sem o sinal. Etiquetas: ${tags.join(', ')}`
+						: `🔓 Sinal obrigatório removido e histórico zerado. Etiquetas: ${tags.join(', ') || '(vazio)'}`,
+				);
+				log.info({ exige, tags }, 'Sinal obrigatório toggled via command');
+			} catch (err) {
+				log.error({ err }, 'Sinal obrigatório toggle failed');
+				await deps.uazapi
+					.sendText(telefone, '❌ Falha ao alternar sinal obrigatório.')
+					.catch(() => undefined);
+			}
+			return c.json({ status: 'ok', command: cmd });
+		}
 		if (cmd === '#ia-on' || cmd === '#ia-off') {
 			const active = cmd === '#ia-on';
 			try {
